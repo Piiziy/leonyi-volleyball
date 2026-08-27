@@ -1,0 +1,7 @@
+dist/
+node_modules/
+analytics.html
+.firebase/
+.firebaserc
+firebase.json
+.DS_Store

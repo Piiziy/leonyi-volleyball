@@ -18,6 +18,9 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 SRC="$HERE/../../src/resources/js"
 DEST="$HERE/engine"
 
+# 이 디렉터리들은 안에 든 파일이 전부 .gitignore 대상이라 새로 클론하면 없다.
+mkdir -p "$DEST/rules" "$DEST/operator" "$DEST/bot"
+
 cp "$SRC/physics.js"           "$DEST/physics.js"
 cp "$SRC/rand.js"              "$DEST/rand.js"
 cp "$SRC/cloud_and_wave.js"    "$DEST/cloud_and_wave.js"

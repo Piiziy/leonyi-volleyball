@@ -96,6 +96,9 @@ var TUNE = {
   NODE_BUDGET: 6000,        // ★ 주 제어. 한 번의 decide()가 펼칠 최대 탐색 노드 수.
                              // 기계 속도와 무관해서 결과가 항상 재현된다.
                              // 올리면 강해지고 느려진다. 개발 머신 기준 깊이 4 수준
+  TIME_CHECK_MASK: 31,       // 이 값+1 노드마다 시계를 본다(31 = 32노드마다).
+                             // 크게 잡으면 시계 비용은 줄지만 안전망이 뚫린다.
+                             // 256마다 보던 시절 최대 362ms 가 나왔다(한도 360ms)
   TIME_BUDGET_MS: 45,        // 안전망. 대회 PC가 느려도 타임아웃하지 않게 한다.
                              // 목표 주기 120ms, 하드 타임아웃 360ms의 절반 이하
   WARMUP_TICKS: 6,           // 첫 이만큼의 틱은 예산을 줄인다(JIT 컴파일 스파이크 회피)
@@ -145,6 +148,7 @@ var TUNE = {
                              // 올리면 예측은 더 어려워지지만 그만큼 실력을 깎는다.
                              // ★ 상대가 우리를 분석하지 않는 대회라면 0이 정답이다
   DECISIVE_SCORE: 900,       // 이 점수 이상이면 확실한 결정타 -- 절대 섞지 않는다
+  DIAG_ROOT: 0,              // N이면 첫 N틱의 루트 후보 점수를 전부 찍는다
   DIAG: 0,                   // 0이면 진단 끔(실전). N이면 N틱마다 탐색 통계를 찍는다.
                              // "예산이 어디 쓰이는가"를 추측 대신 재기 위한 스위치
   MARGIN_WEIGHT: 1.0,        // 결말이 안 났을 때 '여유'를 얼마나 반영할지.
@@ -1121,7 +1125,12 @@ var SEARCH = { deadline: 0, nodes: 0, budget: 0, aborted: false };
 
 // 진단 계수기. TUNE.DIAG 가 0이면 아무 일도 하지 않는다(실전 기본값).
 // "예산이 어디에 쓰이는가"를 추측하지 않고 재기 위한 것.
-var DIAG = { rollouts: 0, horizon: 0, resolved: 0, depthSum: 0, depthN: 0, maxDepth: 0 };
+var DIAG = {
+  rollouts: 0, horizon: 0, resolved: 0, depthSum: 0, depthN: 0, maxDepth: 0,
+  // 탐색이 무엇 때문에 끊겼는가. 노드 한도면 기계 속도와 무관하지만,
+  // 시간 한도면 "평가가 비싼 쪽이 더 얕게 본다"는 뜻이라 공정하지 않다.
+  abortByNodes: 0, abortByTime: 0,
+};
 
 // 깊이마다 재사용할 작업용 world. 탐색 중에는 할당을 전혀 하지 않는다.
 var SCRATCH = [];
@@ -1137,9 +1146,16 @@ function search(w, iAmLeft, depth, touches, wasColliding, isRoot) {
   // 예산은 두 가지로 잰다.
   //   노드 수  : 주 제어. 기계 속도와 무관해서 같은 입력이면 항상 같은 답이 나온다
   //   경과 시간: 안전망. 대회 PC가 개발 머신보다 느려도 타임아웃하지 않게 한다
-  // 시계는 자주 보면 그것대로 비싸므로 256노드마다만 확인한다.
-  if (++SEARCH.nodes > SEARCH.budget) SEARCH.aborted = true;
-  else if ((SEARCH.nodes & 255) === 0 && Date.now() > SEARCH.deadline) {
+  //
+  // ★ 시계를 너무 드물게 보면 안전망이 뚫린다. 256노드마다 보던 것을 실측에서
+  //   최대 362ms(하드 타임아웃 360ms 초과)까지 넘겼다 -- 노드 하나가 비싸지면
+  //   256개 사이에 250ms가 지나가 버린다. 브라우저였다면 그 응답은 폐기되고
+  //   그 틱은 무입력이 되어 그대로 실점이다. TIME_CHECK_MASK 로 간격을 줄인다.
+  if (++SEARCH.nodes > SEARCH.budget) {
+    if (TUNE.DIAG && !SEARCH.aborted) DIAG.abortByNodes++;
+    SEARCH.aborted = true;
+  } else if ((SEARCH.nodes & TUNE.TIME_CHECK_MASK) === 0 && Date.now() > SEARCH.deadline) {
+    if (TUNE.DIAG && !SEARCH.aborted) DIAG.abortByTime++;
     SEARCH.aborted = true;
   }
   if (SEARCH.aborted) return { score: 0, action: null };
@@ -1250,9 +1266,24 @@ function strategyDecide(s) {
       ' 롤아웃=' + DIAG.rollouts +
       ' 결말도달=' + DIAG.resolved +
       ' 지평선도달=' + DIAG.horizon +
+      ' 중단(노드/시간)=' + DIAG.abortByNodes + '/' + DIAG.abortByTime +
       ' (지평선 비율 ' + (DIAG.rollouts ? (100 * DIAG.horizon / DIAG.rollouts).toFixed(1) : '0') + '%)'
     );
   }
+  // 진단: 탐색이 각 후보를 어떻게 평가했는지 그대로 찍는다. 왜 이상한 수를
+  // 골랐는지는 결과만 봐서는 알 수 없고, 후보별 점수를 봐야 안다.
+  if (TUNE.DIAG_ROOT && G.ticks <= TUNE.DIAG_ROOT && best !== null && best.pool) {
+    var line = '[root] tick=' + G.ticks + ' side=' + s.side +
+      ' ball(' + s.ball.x + ',' + s.ball.y + ') v(' + s.ball.xVelocity + ',' + s.ball.yVelocity + ')' +
+      ' elp=' + s.ball.expectedLandingPointX + ' me(' + s.self.x + ',' + s.self.y + ') st=' + s.self.state + '  ';
+    var sorted = best.pool.slice().sort(function (u, v) { return v.score - u.score; });
+    for (var q = 0; q < sorted.length; q++) {
+      line += '(' + sorted[q].action.x + ',' + sorted[q].action.y + ',' + sorted[q].action.hit + ')=' +
+        sorted[q].score.toFixed(0) + ' ';
+    }
+    console.log(line);
+  }
+
   var chosen = pickFromPool(best);
   return chosen !== null && chosen !== undefined ? chosen : { x: 0, y: 0, hit: 0 };
 }

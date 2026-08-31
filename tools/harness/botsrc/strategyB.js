@@ -87,6 +87,13 @@ function rollout(src, iAmLeft, touches) {
   var meP = iAmLeft ? w.p1 : w.p2;
   var oppP = iAmLeft ? w.p2 : w.p1;
   var clamp = function (v) { return Math.max(-100, Math.min(100, v)); };
+  if (TUNE.TWO_PLY !== 1) {
+    // 옛 동작: 공이 상대 쪽이면 상수만 주고, 우리 쪽이면 지금 공 상태에서의
+    // 최선 공격만 본다. 상대의 반격은 계산하지 않는다.
+    if (oppSide) return base;
+    var oldShot = bestShot(w.ball, oppP.x, iAmLeft);
+    return base + TUNE.MARGIN_WEIGHT * clamp(oldShot.margin);
+  }
   if (oppSide) {
     var threat = threatOf(w.ball, oppP.x, !iAmLeft, meP.x, true);
     return base - TUNE.MARGIN_WEIGHT * clamp(threat);
@@ -141,7 +148,7 @@ var DIAG = {
   rollouts: 0, horizon: 0, resolved: 0, depthSum: 0, depthN: 0, maxDepth: 0,
   // 탐색이 무엇 때문에 끊겼는가. 노드 한도면 기계 속도와 무관하지만,
   // 시간 한도면 "평가가 비싼 쪽이 더 얕게 본다"는 뜻이라 공정하지 않다.
-  abortByNodes: 0, abortByTime: 0,
+  abortByNodes: 0, abortByTime: 0, nodeSum: 0, nodeN: 0, nodeMax: 0,
 };
 
 // 깊이마다 재사용할 작업용 world. 탐색 중에는 할당을 전혀 하지 않는다.
@@ -279,6 +286,8 @@ function strategyDecide(s) {
       ' 결말도달=' + DIAG.resolved +
       ' 지평선도달=' + DIAG.horizon +
       ' 중단(노드/시간)=' + DIAG.abortByNodes + '/' + DIAG.abortByTime +
+      ' 실제노드(평균/최대)=' + (DIAG.nodeN ? (DIAG.nodeSum / DIAG.nodeN).toFixed(0) : '-') +
+      '/' + DIAG.nodeMax +
       ' (지평선 비율 ' + (DIAG.rollouts ? (100 * DIAG.horizon / DIAG.rollouts).toFixed(1) : '0') + '%)'
     );
   }
@@ -294,6 +303,11 @@ function strategyDecide(s) {
         sorted[q].score.toFixed(0) + ' ';
     }
     console.log(line);
+  }
+
+  if (TUNE.DIAG) {
+    DIAG.nodeSum += SEARCH.nodes; DIAG.nodeN++;
+    if (SEARCH.nodes > DIAG.nodeMax) DIAG.nodeMax = SEARCH.nodes;
   }
 
   var chosen = pickFromPool(best);

@@ -28,16 +28,27 @@ const parseArgs = (argv) =>
     return { ...acc, [key]: next && !next.startsWith('--') ? next : true };
   }, {});
 
-/** Resolve `ai` or a bot filename (bare name looks in src/code-here/). */
-const loadSide = (spec) => {
+/**
+ * Resolve `ai` or a bot filename (bare name looks in src/code-here/).
+ *
+ * `tuneOverride` is applied to BOTH sides. Two search bots playing each other
+ * take ~10s per set, which makes a 60-set comparison a 10-minute wait; halving
+ * NODE_BUDGET on both sides halves that. Fair because both sides get the same
+ * handicap -- but only trust it for large effects: a change that only matters
+ * at full search depth can hide here. Confirm anything close at full budget.
+ */
+const loadSide = (spec, tuneOverride) => {
   if (spec === 'ai') return { kind: 'ai', label: 'built-in AI' };
   const path = spec.includes('/')
     ? resolve(spec)
     : resolve(REPO, 'src/code-here', spec);
   const source = readFileSync(path, 'utf8');
+  const patched = tuneOverride
+    ? source + '\n;Object.assign(TUNE, ' + tuneOverride + ');'
+    : source;
   return {
     kind: 'bot',
-    decide: compileBot(source, spec),
+    decide: compileBot(patched, spec),
     label: spec.replace(/^.*\//, ''),
   };
 };
@@ -56,8 +67,9 @@ const ci95 = (wins, n) => {
 
 const main = () => {
   const args = parseArgs(process.argv.slice(2));
-  const a = loadSide(args.left || 'ai');
-  const b = loadSide(args.right || 'ai');
+  const tune = typeof args.tune === 'string' ? args.tune : null;
+  const a = loadSide(args.left || 'ai', tune);
+  const b = loadSide(args.right || 'ai', tune);
   const matches = Number(args.matches || 100);
   const baseSeed = Number(args.seed || 1);
   const swap = args['no-swap'] !== true;
@@ -140,7 +152,8 @@ const main = () => {
   console.log(`  ${a.label}   vs   ${b.label}`);
   console.log(`  ${games} sets (${matches} seeds${swap ? ' x 2 orientations' : ', no swap'})`
     + `  ·  touch limit ${touchLimit ? 'on' : 'off'}`
-    + (timeLimitFrames ? `  ·  time limit ${timeLimitFrames / FPS}s` : ''));
+    + (timeLimitFrames ? `  ·  time limit ${timeLimitFrames / FPS}s` : '')
+    + (tune ? `  ·  양쪽 TUNE 덮어쓰기 ${tune}` : ''));
   console.log('  ' + '-'.repeat(66));
   console.log(`  ${a.label.padEnd(28)} ${String(tally.a).padStart(5)} wins   ${pct(tally.a, decided).padStart(5)}%  +-${ci95(tally.a, decided).toFixed(1)}`);
   console.log(`  ${b.label.padEnd(28)} ${String(tally.b).padStart(5)} wins   ${pct(tally.b, decided).padStart(5)}%  +-${ci95(tally.b, decided).toFixed(1)}`);

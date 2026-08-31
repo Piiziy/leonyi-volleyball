@@ -53,7 +53,7 @@ function rollout(src, iAmLeft, touches) {
     //   예전에는 여기서 "걷기만" 했다 -- 즉 탐색 지평선 너머의 우리 공격력이
     //   평가에서 통째로 빠져 있었다. 롤아웃의 95%가 지평선 전에 끝나므로
     //   이 정책이 사실상 평가함수 그 자체다.
-    var myMove = policyFor(w, iAmLeft);
+    var myMove = policyFor(w, iAmLeft, true);
     var r = advance(w, iAmLeft, myMove.x, myMove.y, myMove.hit);
 
     var me = meOf(w, iAmLeft);
@@ -209,6 +209,10 @@ function search(w, iAmLeft, depth, touches, wasColliding, isRoot) {
  */
 function pickFromPool(best) {
   if (best === null || best.pool === undefined) return best !== null ? best.action : null;
+  // ★ 섞기를 끄면 candidateActions 가 넣어 둔 순서대로 동점이 깨진다. 그 순서는
+  //   "중립(0) 먼저"라 의미가 있다 -- 평가가 구분 못 하는 상황에서는 가만히
+  //   있는 쪽이 안전하다. 무작위로 깨면 봇이 좌우로 떨게 된다.
+  if (TUNE.MIX_ENABLED !== 1) return best.action;
   if (best.score >= TUNE.DECISIVE_SCORE) return best.action;  // 이긴 수는 그냥 둔다
   var pool = best.pool;
   var tied = [];

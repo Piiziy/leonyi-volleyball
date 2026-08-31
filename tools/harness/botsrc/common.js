@@ -243,8 +243,10 @@ function simulateBodyHit(ball, standX, standY, maxFrames) {
  *   비행 6프레임 = 못 받는 공). 매번 9가지를 계산하면 탐색이 몇 배 느려진다.
  *
  * @param playerIsLeft 입력을 구할 선수가 왼쪽인가
+ * @param isSelf 이 선수가 "나"인가 (공격 시뮬레이션을 켜고 끄는 스위치가 다르다)
  */
-function policyFor(w, playerIsLeft) {
+function policyFor(w, playerIsLeft, isSelf) {
+  var mayAttack = isSelf ? TUNE.SIM_ATTACK_SELF === 1 : TUNE.SIM_ATTACK_OPP === 1;
   var p = playerIsLeft ? w.p1 : w.p2;
   var ball = w.ball;
   var courtMin = playerIsLeft ? 0 : GROUND_HALF_WIDTH;
@@ -252,24 +254,42 @@ function policyFor(w, playerIsLeft) {
   var ballOnMySide = ball.x > courtMin && ball.x < courtMax;
 
   // 공중에 떠 있고 공이 사거리 안이면 내리꽂는다.
-  if ((p.state === 1 || p.state === 2) && ballOnMySide) {
+  if (mayAttack && (p.state === 1 || p.state === 2) && ballOnMySide) {
     if (
       Math.abs(ball.x - p.x) < TUNE.OPP_HIT_REACH &&
       Math.abs(ball.y - p.y) < TUNE.OPP_HIT_REACH
     ) {
       var toBall = ball.x - p.x;
-      return { x: Math.abs(toBall) > 4 ? (toBall > 0 ? 1 : -1) : 0, y: 1, hit: 1 };
+      // 스매시 각도. y=1(급강하)은 네트에서 멀면 자기 코트에 꽂히는 자책골이다
+      // ([[승리 물리학]] 참고: 네트 26~40px 지점에서만 결정타가 된다).
+      // 거리를 안 보고 항상 y=1로 두면 시뮬레이션 속 선수가 자기 발밑에
+      // 스매시를 꽂고, 그 엉터리 결말이 평가에 그대로 섞인다.
+      var smashY = 1;
+      if (TUNE.SIM_SMASH_BY_DISTANCE === 1) {
+        var distToNet = Math.abs(ball.x - GROUND_HALF_WIDTH);
+        smashY = distToNet < TUNE.SMASH_NEAR_NET ? 1 : (distToNet < TUNE.SMASH_MID_NET ? 0 : -1);
+      }
+      return { x: Math.abs(toBall) > 4 ? (toBall > 0 ? 1 : -1) : 0, y: smashY, hit: 1 };
     }
   }
 
   // 낙하지점으로 걷되 정중앙은 피한다(몸 한가운데로 받으면 공이 수직으로 튄다).
+  //
+  // ★ 상대 모델은 원래 비켜서지 않고 낙하지점을 정확히 향했다(임계값 8).
+  //   policyFor 로 합치면서 우리 쪽 방식이 상대에게도 적용됐는데, 그건 상대
+  //   모델을 바꾼 것이다. SIM_WALK_LEGACY=1 이면 옛 상대 모델로 되돌린다.
   var toNet = playerIsLeft ? 1 : -1;
-  var target = ball.expectedLandingPointX - toNet * TUNE.AIR_CHASE_OFFSET;
+  var legacyOpponentWalk = TUNE.SIM_WALK_LEGACY === 1 && !isSelf;
+  var target = legacyOpponentWalk
+    ? ball.expectedLandingPointX
+    : ball.expectedLandingPointX - toNet * TUNE.AIR_CHASE_OFFSET;
   var dx = target - p.x;
-  var mx = Math.abs(dx) > TUNE.MOVE_DEADBAND ? (dx > 0 ? 1 : -1) : 0;
+  var threshold = legacyOpponentWalk ? 8 : TUNE.MOVE_DEADBAND;
+  var mx = Math.abs(dx) > threshold ? (dx > 0 ? 1 : -1) : 0;
 
   // 공이 내 코트로 높이 떨어지는 중이면 점프해서 맞이한다.
   if (
+    mayAttack &&
     p.state === 0 &&
     p.y === PLAYER_TOUCHING_GROUND_Y_COORD &&
     ballOnMySide &&
@@ -285,7 +305,7 @@ function policyFor(w, playerIsLeft) {
 
 /** 상대 쪽 입력 추정 (policyFor의 얇은 래퍼) */
 function guessOpponentInput(w, iAmLeft) {
-  return policyFor(w, !iAmLeft);
+  return policyFor(w, !iAmLeft, false);
 }
 
 // --- 코트 기하 ---------------------------------------------------------------
@@ -415,6 +435,7 @@ function observeOpponent(s) {
  * 비행 20프레임이면 40px 차이라 우리가 노릴 수 있는 코스가 크게 넓어진다.
  */
 function observedDiveSpeed() {
+  if (TUNE.SPEC_ADAPT !== 1) return TUNE.OPP_DIVE_SPEED;
   var spec = G.oppSpec;
   var enoughEvidence =
     spec.ticks > TUNE.SPEC_MIN_TICKS && spec.stress > TUNE.SPEC_MIN_STRESS;
@@ -427,6 +448,7 @@ function observedDiveSpeed() {
  * 안 하는 상대라면 우리가 두려워할 강타가 없다 -> 수비를 앞으로 당겨도 된다.
  */
 function opponentSmashes() {
+  if (TUNE.SPEC_ADAPT !== 1) return true;
   var spec = G.oppSpec;
   if (spec.ticks <= TUNE.SPEC_MIN_TICKS) return true; // 증거 없으면 있다고 본다
   return spec.smashes > 0;

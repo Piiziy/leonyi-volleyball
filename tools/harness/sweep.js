@@ -39,15 +39,23 @@ const combos = Object.keys(grid).reduce(
   [{}]
 );
 
+// --tune 은 양쪽에 공통으로 적용된다(예: 탐색 예산을 낮춰 빠르게 돌리기).
+// 격자(--grid)는 그 위에 후보에게만 덧씌운다.
+const baseTune = typeof args.tune === 'string' ? args.tune : null;
+const withTune = (source, extra) => {
+  let out = source;
+  if (baseTune) out += '\n;Object.assign(TUNE, ' + baseTune + ');';
+  if (extra) out += '\n;Object.assign(TUNE, ' + JSON.stringify(extra) + ');';
+  return out;
+};
 const makeSide = (overrides) => ({
   kind: 'bot',
-  decide: compileBot(
-    botSource + '\n;Object.assign(TUNE, ' + JSON.stringify(overrides) + ');',
-    botFile
-  ),
+  decide: compileBot(withTune(botSource, overrides), botFile),
 });
 const makeOpp = () =>
-  oppSource === null ? { kind: 'ai' } : { kind: 'bot', decide: compileBot(oppSource, oppSpec) };
+  oppSource === null
+    ? { kind: 'ai' }
+    : { kind: 'bot', decide: compileBot(withTune(oppSource, null), oppSpec) };
 
 console.log(`\n  ${botFile} vs ${oppSpec}   ${combos.length} combos x ${matches * 2} sets\n`);
 const results = combos.map((overrides) => {

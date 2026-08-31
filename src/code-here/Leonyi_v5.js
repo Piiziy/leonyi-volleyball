@@ -110,16 +110,35 @@ var TUNE = {
   BUMP_THREAT_SCALE: 0.3,    // 퍼올린 공의 위협을 스매시 대비 몇 배로 볼지.
                              // 올리면 낮은 공도 무서워해 수비적이 된다
   OPP_WALK_SPEED: 6,         // 상대가 걸어서 이동하는 속도(다이빙은 8)
+  // 시뮬레이션 속 선수들이 공격까지 하는가. 0이면 걷기만 한다(옛 동작).
+  // 롤아웃의 95%가 지평선 전에 끝나므로, 이 정책이 사실상 평가함수다.
+  SIM_WALK_LEGACY: 0,        // 1이면 시뮬 속 상대가 옛 방식으로 걷는다
+                             // (낙하지점 정확히, 임계값 8 -- 비켜서지 않음)
+  SIM_ATTACK_OPP: 1,         // 시뮬 속 상대가 점프해서 스매시하는가
+  SIM_ATTACK_SELF: 1,        // 시뮬 속 내가 점프해서 스매시하는가
+  SIM_SMASH_BY_DISTANCE: 1,  // 시뮬 속 스매시 각도를 네트 거리로 고르는가.
+                             // 0이면 항상 급강하(y=1) -- 네트에서 멀면 자책골이라
+                             // 시뮬 결말이 엉망이 된다
+  SMASH_NEAR_NET: 80,        // 네트에서 이 안이면 급강하(y=1)가 넘어간다
+  SMASH_MID_NET: 140,        // 여기까지는 수평(y=0), 그보다 멀면 아치(y=-1)
   OPP_HIT_REACH: 40,         // 시뮬레이션 속 상대가 파워히트를 시도하는 거리
   OPP_JUMP_BALL_Y: 170,      // 상대가 이보다 높은 공에는 점프해서 맞이한다고 본다
   OPP_JUMP_ALIGN_X: 50,      // 상대가 점프할 만큼 공과 가로로 가까운 거리         // 상대가 걸어서 이동하는 속도(다이빙은 8)
 
   // --- 상대 스펙 관측 ([4b]) — 증거가 쌓이기 전엔 보수적으로 -------------
+  SPEC_ADAPT: 1,             // 0이면 상대 스펙 관측을 무시하고 항상 최악을 가정
   SPEC_MIN_TICKS: 120,       // 이만큼 관측해야 상대 능력치 판단을 시작한다
                              // (틱=120ms이므로 약 14초, 랠리 2~3개)
   SPEC_MIN_STRESS: 8,        // 상대가 실제로 쫓아가야 했던 상황을 이만큼 본 뒤에만
                              // "이 상대는 다이빙을 안 한다"고 결론 내린다         // 상대가 걸어서 이동하는 속도(다이빙은 8)
   // --- 수 섞기 (상대의 예측표 무력화) --------------------------------------
+  MIX_ENABLED: 0,            // ★ 켜지 말 것. 동점을 무작위로 깨면 승률이 50% -> 15% 로
+                             // 무너진다(측정). candidateActions 는 중립(0)을 먼저
+                             // 넣어 두는데, 평가가 구분 못 하는 상황에서 "가만히
+                             // 있기"를 고르는 그 순서 자체가 정보다. 무작위로 깨면
+                             // 봇이 결정을 못 하고 좌우로 떤다.
+                             // 상대가 우리 패턴을 읽는 게 걱정된다면, 섞는 대신
+                             // 평가함수를 더 정밀하게 만들어 동점 자체를 줄여야 한다
   MIX_EPSILON: 0,            // 최선 대비 이 점수 안이면 같은 수로 보고 무작위 선택.
                              // 0 = 완전 동점만 섞음 -> 우리 평가상 똑같은 수들이라
                              //     실력 손해가 0인데도 상대의 예측표는 무력화된다.
@@ -704,8 +723,10 @@ function simulateBodyHit(ball, standX, standY, maxFrames) {
  *   비행 6프레임 = 못 받는 공). 매번 9가지를 계산하면 탐색이 몇 배 느려진다.
  *
  * @param playerIsLeft 입력을 구할 선수가 왼쪽인가
+ * @param isSelf 이 선수가 "나"인가 (공격 시뮬레이션을 켜고 끄는 스위치가 다르다)
  */
-function policyFor(w, playerIsLeft) {
+function policyFor(w, playerIsLeft, isSelf) {
+  var mayAttack = isSelf ? TUNE.SIM_ATTACK_SELF === 1 : TUNE.SIM_ATTACK_OPP === 1;
   var p = playerIsLeft ? w.p1 : w.p2;
   var ball = w.ball;
   var courtMin = playerIsLeft ? 0 : GROUND_HALF_WIDTH;
@@ -713,24 +734,42 @@ function policyFor(w, playerIsLeft) {
   var ballOnMySide = ball.x > courtMin && ball.x < courtMax;
 
   // 공중에 떠 있고 공이 사거리 안이면 내리꽂는다.
-  if ((p.state === 1 || p.state === 2) && ballOnMySide) {
+  if (mayAttack && (p.state === 1 || p.state === 2) && ballOnMySide) {
     if (
       Math.abs(ball.x - p.x) < TUNE.OPP_HIT_REACH &&
       Math.abs(ball.y - p.y) < TUNE.OPP_HIT_REACH
     ) {
       var toBall = ball.x - p.x;
-      return { x: Math.abs(toBall) > 4 ? (toBall > 0 ? 1 : -1) : 0, y: 1, hit: 1 };
+      // 스매시 각도. y=1(급강하)은 네트에서 멀면 자기 코트에 꽂히는 자책골이다
+      // ([[승리 물리학]] 참고: 네트 26~40px 지점에서만 결정타가 된다).
+      // 거리를 안 보고 항상 y=1로 두면 시뮬레이션 속 선수가 자기 발밑에
+      // 스매시를 꽂고, 그 엉터리 결말이 평가에 그대로 섞인다.
+      var smashY = 1;
+      if (TUNE.SIM_SMASH_BY_DISTANCE === 1) {
+        var distToNet = Math.abs(ball.x - GROUND_HALF_WIDTH);
+        smashY = distToNet < TUNE.SMASH_NEAR_NET ? 1 : (distToNet < TUNE.SMASH_MID_NET ? 0 : -1);
+      }
+      return { x: Math.abs(toBall) > 4 ? (toBall > 0 ? 1 : -1) : 0, y: smashY, hit: 1 };
     }
   }
 
   // 낙하지점으로 걷되 정중앙은 피한다(몸 한가운데로 받으면 공이 수직으로 튄다).
+  //
+  // ★ 상대 모델은 원래 비켜서지 않고 낙하지점을 정확히 향했다(임계값 8).
+  //   policyFor 로 합치면서 우리 쪽 방식이 상대에게도 적용됐는데, 그건 상대
+  //   모델을 바꾼 것이다. SIM_WALK_LEGACY=1 이면 옛 상대 모델로 되돌린다.
   var toNet = playerIsLeft ? 1 : -1;
-  var target = ball.expectedLandingPointX - toNet * TUNE.AIR_CHASE_OFFSET;
+  var legacyOpponentWalk = TUNE.SIM_WALK_LEGACY === 1 && !isSelf;
+  var target = legacyOpponentWalk
+    ? ball.expectedLandingPointX
+    : ball.expectedLandingPointX - toNet * TUNE.AIR_CHASE_OFFSET;
   var dx = target - p.x;
-  var mx = Math.abs(dx) > TUNE.MOVE_DEADBAND ? (dx > 0 ? 1 : -1) : 0;
+  var threshold = legacyOpponentWalk ? 8 : TUNE.MOVE_DEADBAND;
+  var mx = Math.abs(dx) > threshold ? (dx > 0 ? 1 : -1) : 0;
 
   // 공이 내 코트로 높이 떨어지는 중이면 점프해서 맞이한다.
   if (
+    mayAttack &&
     p.state === 0 &&
     p.y === PLAYER_TOUCHING_GROUND_Y_COORD &&
     ballOnMySide &&
@@ -746,7 +785,7 @@ function policyFor(w, playerIsLeft) {
 
 /** 상대 쪽 입력 추정 (policyFor의 얇은 래퍼) */
 function guessOpponentInput(w, iAmLeft) {
-  return policyFor(w, !iAmLeft);
+  return policyFor(w, !iAmLeft, false);
 }
 
 // --- 코트 기하 ---------------------------------------------------------------
@@ -876,6 +915,7 @@ function observeOpponent(s) {
  * 비행 20프레임이면 40px 차이라 우리가 노릴 수 있는 코스가 크게 넓어진다.
  */
 function observedDiveSpeed() {
+  if (TUNE.SPEC_ADAPT !== 1) return TUNE.OPP_DIVE_SPEED;
   var spec = G.oppSpec;
   var enoughEvidence =
     spec.ticks > TUNE.SPEC_MIN_TICKS && spec.stress > TUNE.SPEC_MIN_STRESS;
@@ -888,6 +928,7 @@ function observedDiveSpeed() {
  * 안 하는 상대라면 우리가 두려워할 강타가 없다 -> 수비를 앞으로 당겨도 된다.
  */
 function opponentSmashes() {
+  if (TUNE.SPEC_ADAPT !== 1) return true;
   var spec = G.oppSpec;
   if (spec.ticks <= TUNE.SPEC_MIN_TICKS) return true; // 증거 없으면 있다고 본다
   return spec.smashes > 0;
@@ -996,7 +1037,7 @@ function rollout(src, iAmLeft, touches) {
     //   예전에는 여기서 "걷기만" 했다 -- 즉 탐색 지평선 너머의 우리 공격력이
     //   평가에서 통째로 빠져 있었다. 롤아웃의 95%가 지평선 전에 끝나므로
     //   이 정책이 사실상 평가함수 그 자체다.
-    var myMove = policyFor(w, iAmLeft);
+    var myMove = policyFor(w, iAmLeft, true);
     var r = advance(w, iAmLeft, myMove.x, myMove.y, myMove.hit);
 
     var me = meOf(w, iAmLeft);
@@ -1152,6 +1193,10 @@ function search(w, iAmLeft, depth, touches, wasColliding, isRoot) {
  */
 function pickFromPool(best) {
   if (best === null || best.pool === undefined) return best !== null ? best.action : null;
+  // ★ 섞기를 끄면 candidateActions 가 넣어 둔 순서대로 동점이 깨진다. 그 순서는
+  //   "중립(0) 먼저"라 의미가 있다 -- 평가가 구분 못 하는 상황에서는 가만히
+  //   있는 쪽이 안전하다. 무작위로 깨면 봇이 좌우로 떨게 된다.
+  if (TUNE.MIX_ENABLED !== 1) return best.action;
   if (best.score >= TUNE.DECISIVE_SCORE) return best.action;  // 이긴 수는 그냥 둔다
   var pool = best.pool;
   var tied = [];

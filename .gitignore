@@ -18,3 +18,7 @@ tools/harness/engine/operator/
 tools/harness/engine/bot/
 # 브라우저 대조 검증에서 받아오는 임시 기록
 tools/harness/browser-trace.json
+# build.js 의 출력물. 원하는 이름으로 복사해서 쓰는 중간 산물이라 커밋하지 않는다.
+src/code-here/Lab*_v1.js
+!src/code-here/LabA_v1.js
+!src/code-here/LabC_v1.js

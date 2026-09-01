@@ -43,6 +43,7 @@ const tuneFor = (budget, extra) =>
     extra ? JSON.parse(extra) : {}
   );
 
+console.log(`  측정 시작... ${matches * 2} sets (진행 중 출력 없음, 끝날 때 한 번에 나옵니다)`);
 const started = Date.now();
 const r = await runParallel({
   aFile, bFile,

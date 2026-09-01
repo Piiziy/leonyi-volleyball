@@ -9,16 +9,40 @@
 'use strict';
 import { spawn } from 'node:child_process';
 import { cpus } from 'node:os';
+import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+const REPO = resolve(HERE, '../..');
 
 /**
  * @param {Object} spec {aFile,bFile,aTune,bTune,matches,seedBase}
  * @param {number} [workers] 기본값: 코어 수 - 1 (한 코어는 남겨 둔다)
  */
+/**
+ * TUNE 오버라이드가 실제로 봇 파일 안에 존재하는 키인지 확인한다.
+ *
+ * ★ 소스만 고치고 빌드를 안 하면, 없는 키를 덮어써도 아무 일이 일어나지 않고
+ *   측정은 "차이 없음"으로 조용히 끝난다. 실제로 그렇게 30분을 날렸다.
+ *   Object.assign 은 없는 키도 만들어 버리므로 런타임 오류도 안 난다.
+ */
+const assertTuneKeysExist = (file, tune) => {
+  if (file === 'ai' || !tune) return;
+  const src = readFileSync(resolve(REPO, 'src/code-here', file), 'utf8');
+  const missing = Object.keys(tune).filter((k) => !new RegExp('\\b' + k + '\\s*:').test(src));
+  if (missing.length > 0) {
+    throw new Error(
+      `${file} 에 없는 TUNE 키를 덮어쓰려 합니다: ${missing.join(', ')}\n` +
+      `  소스를 고친 뒤 빌드하지 않았을 가능성이 큽니다. ` +
+      `\`node build.js B --as ${file.replace(/\.js$/, '')}\` 를 먼저 실행하세요.`
+    );
+  }
+};
+
 export const runParallel = (spec, workers) => {
+  assertTuneKeysExist(spec.aFile, spec.aTune);
+  assertTuneKeysExist(spec.bFile, spec.bTune);
   const n = workers || Math.max(1, cpus().length - 1);
   const chunk = Math.ceil(spec.matches / n);
   const jobs = [];

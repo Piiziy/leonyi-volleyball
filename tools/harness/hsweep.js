@@ -44,8 +44,13 @@ const combos = Object.keys(grid).reduce(
 console.log(`\n  ${bot}  후보 ${aBudget}노드  vs  기준 ${bBudget}노드`);
 console.log(`  ${combos.length} combos x ${matches * 2} sets\n`);
 
+// ★ 조합마다 끝나는 즉시 찍는다. 전부 끝난 뒤에 한 번에 찍으면 오래 걸리는
+//   실행에서 진행 상황을 알 수 없다(실제로 77분 동안 아무것도 안 보였다).
+//   그리고 이 출력을 tail 로 파이프하지 말 것 -- 버퍼에 갇힌다.
 const rows = [];
+let done = 0;
 for (const overrides of combos) {
+  const started = Date.now();
   const r = await runParallel({
     aFile: bot, bFile: bot,
     aTune: Object.assign(base(aBudget), overrides),
@@ -56,7 +61,15 @@ for (const overrides of combos) {
   const p = decided ? r.aWins / decided : 0;
   const ci = decided ? 100 * 1.96 * Math.sqrt((p * (1 - p)) / decided) : 100;
   rows.push({ overrides, rate: 100 * p, ci, decided, wins: r.aWins });
+  done++;
+  const label = Object.keys(overrides).map((k) => `${k}=${overrides[k]}`).join('  ') || '(기본값)';
+  console.log(
+    `  [${done}/${combos.length}] ${(100 * p).toFixed(1).padStart(5)}% ±${ci.toFixed(1).padStart(4)}` +
+    `  (${r.aWins}/${decided})  ${label}` +
+    `   ${((Date.now() - started) / 1000).toFixed(0)}s`
+  );
 }
+console.log('');
 
 rows.sort((a, b) => b.rate - a.rate);
 const best = rows[0];

@@ -1,6 +1,6 @@
 'use strict';
 // ============================================================================
-//  리온이 배구 봇 — LabB
+//  리온이 배구 봇 — Leonyi_v4
 //
 //  이 봇은 게임 물리 엔진의 복사본을 안에 들고 있다. 매 틱 앞으로 몇 수를
 //  실제로 시뮬레이션해 보고, "상대가 원리적으로 못 받는 공"을 만드는 수를 고른다.
@@ -21,12 +21,24 @@
 //  스냅샷에 새 필드가 생겼다             [4] 필요하면 buildWorld 에서 읽기
 //                                       (안 읽어도 봇은 정상 동작한다)
 //
+//  ★ 봇이 갑자기 눈에 띄게 약해졌다     F12 콘솔을 볼 것. "물리 예측이 실제와
+//    (공을 잘 받는데 공격을 안 한다)     어긋난다"가 찍혀 있으면 [4c] 안전장치가
+//                                       발동해 탐색을 끄고 단순 모드로 내려간
+//                                       것이다. 물리가 바뀌었다는 뜻이므로
+//                                       [3] 물리 미러를 새 규칙에 맞게 고치면
+//                                       자동으로 탐색 모드로 복귀한다.
+//                                       콘솔에 무엇이 얼마나 어긋났는지(공의
+//                                       위치·속도 차이) 함께 찍히니 그게 단서다.
+//  봇이 아무것도 안 한다                 F12 콘솔에 "decide 예외"가 찍혔는지 확인.
+//                                       예외는 한 번만 출력된다.
+//
 //  ----------------------------------------------------------------------------
 //  파일 구조
 //    [1] 튜닝 상수   숫자만 바꿔 성격을 조절 (제일 먼저 볼 곳)
 //    [2] 게임 상수   룰 자체가 바뀌었을 때
 //    [3] 물리 미러   엔진 복사본. 새 스킬은 여기
 //    [4] 상태 추정   스냅샷에 없는 값(플레이어 y속도 등) 복원
+//    [4b] 상대 관측  상대가 다이빙·파워히트를 쓰는지 매 틱 관측
 //    [4c] 물리 감시  예측이 실제와 어긋나면 단순 모드로 (당일 스킬 대비)
 //    [5] 목적함수    "여유" -- 이 봇의 모든 판단 기준
 //    [6] 전략        판단 로직
@@ -138,9 +150,24 @@ var TUNE = {
   // 롤아웃의 95%가 지평선 전에 끝나므로, 이 정책이 사실상 평가함수다.
   SIM_WALK_LEGACY: 0,        // 1이면 시뮬 속 상대가 옛 방식으로 걷는다
                              // (낙하지점 정확히, 임계값 8 -- 비켜서지 않음)
+  SIM_DIVE: 0,               // 미측정. 켜기 전에 반드시 재볼 것.
+                             // 시뮬 속 선수가 걸어서 못 닿는 공에 다이빙하는가.
+                             // 없으면 롤아웃이 양쪽 수비 범위를 과소평가한다
+  SIM_DIVE_MIN_DX: 40,       // 낙하지점이 이보다 멀면 다이빙 (걷기로는 부족)
+  SIM_DIVE_BALL_Y: 170,      // 공이 이보다 낮게 내려왔을 때만 다이빙
+  SIM_LANDING_REFRESH: 0,    // 미측정. 켜기 전에 반드시 재볼 것.
+                             // 탐색·롤아웃 안에서 공이 타격/반사로 방향이
+                             // 바뀌면 낙하지점을 다시 계산한다. 0이면 시뮬 속
+                             // 선수들이 낡은 지점을 향해 계속 뛴다
   SIM_ATTACK_OPP: 1,         // 시뮬 속 상대가 점프해서 스매시하는가
   SIM_ATTACK_SELF: 1,        // 시뮬 속 내가 점프해서 스매시하는가
-  SIM_SMASH_BY_DISTANCE: 1,  // 시뮬 속 스매시 각도를 네트 거리로 고르는가.
+  SIM_SMASH_BY_DISTANCE: 0,  // ★ 켜지 말 것. 300세트에서 43.7% -> 19.0% 로
+                             // 25%p 손해다. "네트에서 멀면 급강하는 자책골"이라는
+                             // 도메인 지식으로 넣었는데 롤아웃에서는 해로웠다.
+                             // 롤아웃 정책은 현실을 흉내 내는 게 아니라 위치의
+                             // 우열을 가르는 도구다. 항상 급강하하는 가상의
+                             // 선수가 더 위협적이라 평가가 날카로워진다.
+                             // 시뮬 속 스매시 각도를 네트 거리로 고르는가.
                              // 0이면 항상 급강하(y=1) -- 네트에서 멀면 자책골이라
                              // 시뮬 결말이 엉망이 된다
   SMASH_NEAR_NET: 80,        // 네트에서 이 안이면 급강하(y=1)가 넘어간다
@@ -485,6 +512,8 @@ function predictPowerHitLanding(ix, iy, ball) {
  * 반환: {ground: 바닥에 닿았나, landedX: 닿았다면 그 x, uncertain: 난수 개입}
  */
 function stepFrame(w, i1x, i1y, i1h, i2x, i2y, i2h, skipLandingPrediction) {
+  var vx0 = w.ball.xVelocity;
+  var vy0 = w.ball.yVelocity;
   var ground = stepBallWorld(w.ball);
   var landedX = ground ? w.ball.x : -1;
 
@@ -492,6 +521,7 @@ function stepFrame(w, i1x, i1y, i1h, i2x, i2y, i2h, skipLandingPrediction) {
   stepPlayer(w.p2, i2x, i2y, i2h);
 
   var uncertain = false;
+  var hitHappened = false;
   var players = [w.p1, w.p2];
   var ins = [[i1x, i1y], [i2x, i2y]];
   for (var i = 0; i < 2; i++) {
@@ -500,6 +530,7 @@ function stepFrame(w, i1x, i1y, i1h, i2x, i2y, i2h, skipLandingPrediction) {
       if (!p.collided) {
         if (processHit(w.ball, p.x, ins[i][0], ins[i][1], p.state)) uncertain = true;
         p.collided = true;
+        hitHappened = true;
       }
     } else {
       p.collided = false;
@@ -515,7 +546,16 @@ function stepFrame(w, i1x, i1y, i1h, i2x, i2y, i2h, skipLandingPrediction) {
   //
   // 탐색처럼 이 값이 필요 없는 곳에서는 skipLandingPrediction으로 끈다.
   // 물리는 항상 정확해야 하지만, 정책의 근사는 허용된다.
-  if (!skipLandingPrediction) {
+  //
+  // ★ 다만 완전히 끄면 시뮬레이션 속 선수들이 **낡은 낙하지점**을 향해 걷는다.
+  //   공이 타격당해 방향이 반대로 바뀌어도 계속 옛 지점으로 뛴다. 그래서
+  //   속도가 바뀐 프레임(타격·벽·네트·바닥 반사)에만 다시 계산한다. 자유낙하
+  //   중에는 착지점이 거의 변하지 않으므로 비용은 타격당 한 번뿐이다.
+  //   (엄밀히는 예측 함수의 네트 판정이 실제 물리와 미세하게 달라 완전 불변은
+  //   아니지만, 정책의 조준점으로 쓰기에는 충분하다.)
+  var velocityChanged =
+    hitHappened || ground || w.ball.xVelocity !== vx0 || w.ball.yVelocity !== vy0 + 1;
+  if (!skipLandingPrediction || (TUNE.SIM_LANDING_REFRESH === 1 && velocityChanged)) {
     w.ball.expectedLandingPointX = predictLanding(w.ball);
   }
   return { ground: ground, landedX: landedX, uncertain: uncertain };
@@ -820,6 +860,23 @@ function policyFor(w, playerIsLeft, isSelf) {
   var dx = target - p.x;
   var threshold = legacyOpponentWalk ? 8 : TUNE.MOVE_DEADBAND;
   var mx = Math.abs(dx) > threshold ? (dx > 0 ? 1 : -1) : 0;
+
+  // 걸어서는 못 닿지만 다이빙이면 닿는 공에는 몸을 던진다.
+  //
+  // ★ 이게 없으면 시뮬레이션 속 선수들이 **다이빙을 전혀 안 한다.** 실제 봇에게
+  //   다이빙은 핵심 수단인데(후보에서 빼면 승률 15% 로 붕괴) 롤아웃에서 빠져
+  //   있으면 양쪽의 수비 범위를 과소평가하게 된다 -- 우리 공격은 실제보다
+  //   위협적으로, 상대 공격은 실제보다 덜 위협적으로 보인다.
+  if (
+    TUNE.SIM_DIVE === 1 &&
+    p.state === 0 &&
+    p.y === PLAYER_TOUCHING_GROUND_Y_COORD &&
+    ballOnMySide &&
+    ball.y > TUNE.SIM_DIVE_BALL_Y &&
+    Math.abs(target - p.x) > TUNE.SIM_DIVE_MIN_DX
+  ) {
+    return { x: target > p.x ? 1 : -1, y: 0, hit: 1 };
+  }
 
   // 공이 내 코트로 높이 떨어지는 중이면 점프해서 맞이한다.
   if (

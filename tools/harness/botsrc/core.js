@@ -285,6 +285,8 @@ function predictPowerHitLanding(ix, iy, ball) {
  * 반환: {ground: 바닥에 닿았나, landedX: 닿았다면 그 x, uncertain: 난수 개입}
  */
 function stepFrame(w, i1x, i1y, i1h, i2x, i2y, i2h, skipLandingPrediction) {
+  var vx0 = w.ball.xVelocity;
+  var vy0 = w.ball.yVelocity;
   var ground = stepBallWorld(w.ball);
   var landedX = ground ? w.ball.x : -1;
 
@@ -292,6 +294,7 @@ function stepFrame(w, i1x, i1y, i1h, i2x, i2y, i2h, skipLandingPrediction) {
   stepPlayer(w.p2, i2x, i2y, i2h);
 
   var uncertain = false;
+  var hitHappened = false;
   var players = [w.p1, w.p2];
   var ins = [[i1x, i1y], [i2x, i2y]];
   for (var i = 0; i < 2; i++) {
@@ -300,6 +303,7 @@ function stepFrame(w, i1x, i1y, i1h, i2x, i2y, i2h, skipLandingPrediction) {
       if (!p.collided) {
         if (processHit(w.ball, p.x, ins[i][0], ins[i][1], p.state)) uncertain = true;
         p.collided = true;
+        hitHappened = true;
       }
     } else {
       p.collided = false;
@@ -315,7 +319,16 @@ function stepFrame(w, i1x, i1y, i1h, i2x, i2y, i2h, skipLandingPrediction) {
   //
   // 탐색처럼 이 값이 필요 없는 곳에서는 skipLandingPrediction으로 끈다.
   // 물리는 항상 정확해야 하지만, 정책의 근사는 허용된다.
-  if (!skipLandingPrediction) {
+  //
+  // ★ 다만 완전히 끄면 시뮬레이션 속 선수들이 **낡은 낙하지점**을 향해 걷는다.
+  //   공이 타격당해 방향이 반대로 바뀌어도 계속 옛 지점으로 뛴다. 그래서
+  //   속도가 바뀐 프레임(타격·벽·네트·바닥 반사)에만 다시 계산한다. 자유낙하
+  //   중에는 착지점이 거의 변하지 않으므로 비용은 타격당 한 번뿐이다.
+  //   (엄밀히는 예측 함수의 네트 판정이 실제 물리와 미세하게 달라 완전 불변은
+  //   아니지만, 정책의 조준점으로 쓰기에는 충분하다.)
+  var velocityChanged =
+    hitHappened || ground || w.ball.xVelocity !== vx0 || w.ball.yVelocity !== vy0 + 1;
+  if (!skipLandingPrediction || (TUNE.SIM_LANDING_REFRESH === 1 && velocityChanged)) {
     w.ball.expectedLandingPointX = predictLanding(w.ball);
   }
   return { ground: ground, landedX: landedX, uncertain: uncertain };

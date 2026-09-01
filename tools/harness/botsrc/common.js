@@ -298,6 +298,23 @@ function policyFor(w, playerIsLeft, isSelf) {
   var threshold = legacyOpponentWalk ? 8 : TUNE.MOVE_DEADBAND;
   var mx = Math.abs(dx) > threshold ? (dx > 0 ? 1 : -1) : 0;
 
+  // 걸어서는 못 닿지만 다이빙이면 닿는 공에는 몸을 던진다.
+  //
+  // ★ 이게 없으면 시뮬레이션 속 선수들이 **다이빙을 전혀 안 한다.** 실제 봇에게
+  //   다이빙은 핵심 수단인데(후보에서 빼면 승률 15% 로 붕괴) 롤아웃에서 빠져
+  //   있으면 양쪽의 수비 범위를 과소평가하게 된다 -- 우리 공격은 실제보다
+  //   위협적으로, 상대 공격은 실제보다 덜 위협적으로 보인다.
+  if (
+    TUNE.SIM_DIVE === 1 &&
+    p.state === 0 &&
+    p.y === PLAYER_TOUCHING_GROUND_Y_COORD &&
+    ballOnMySide &&
+    ball.y > TUNE.SIM_DIVE_BALL_Y &&
+    Math.abs(target - p.x) > TUNE.SIM_DIVE_MIN_DX
+  ) {
+    return { x: target > p.x ? 1 : -1, y: 0, hit: 1 };
+  }
+
   // 공이 내 코트로 높이 떨어지는 중이면 점프해서 맞이한다.
   if (
     mayAttack &&

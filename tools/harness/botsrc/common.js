@@ -271,16 +271,44 @@ function policyFor(w, playerIsLeft, isSelf) {
       Math.abs(ball.y - p.y) < TUNE.OPP_HIT_REACH
     ) {
       var toBall = ball.x - p.x;
-      // 스매시 각도. y=1(급강하)은 네트에서 멀면 자기 코트에 꽂히는 자책골이다
-      // ([[승리 물리학]] 참고: 네트 26~40px 지점에서만 결정타가 된다).
-      // 거리를 안 보고 항상 y=1로 두면 시뮬레이션 속 선수가 자기 발밑에
-      // 스매시를 꽂고, 그 엉터리 결말이 평가에 그대로 섞인다.
-      var smashY = 1;
-      if (TUNE.SIM_SMASH_BY_DISTANCE === 1) {
-        var distToNet = Math.abs(ball.x - GROUND_HALF_WIDTH);
-        smashY = distToNet < TUNE.SMASH_NEAR_NET ? 1 : (distToNet < TUNE.SMASH_MID_NET ? 0 : -1);
+      // 스매시 각도를 고른다.
+      //
+      // ★ 거리 문턱으로 정하면 안 된다. y=1(급강하)이 넘어가는지는 네트까지의
+      //   거리뿐 아니라 **접촉 높이와 공의 속도**에도 달려 있다. 거리만 보고
+      //   정했더니 낮은 공(높이 150)에서 자기 코트에 꽂는 경우가 남았다
+      //   (sanity.js 가 잡아냈다). 시뮬 속 선수가 자멸하면 봇은 "상대가 알아서
+      //   자책골을 넣는다"고 계산해 받기 좋은 공을 상대에게 준다 -- 실전에서
+      //   관찰된 실점 패턴이 이것이었다.
+      //
+      //   그래서 실제로 굴려서 **넘어가는 것 중 가장 가파른 각도**를 고른다.
+      //   이 코드는 정책이 "때린다"고 판단한 프레임에서만 도는데, 롤아웃
+      //   90프레임 중 몇 개뿐이라 비용이 감당된다.
+      // ★ 파워히트의 방향은 선수의 진영이 아니라 **공이 네트의 어느 쪽에 있는가**
+      //   로 정해진다(physics.js processCollisionBetweenBallAndPlayer). 선수의
+      //   진영으로 판단하면 공이 네트를 살짝 넘은 순간 반대로 계산한다 --
+      //   실제로 이 실수로 진영별 승률이 18% 대 100% 로 갈렸다.
+      var smashX = Math.abs(toBall) > 4 ? (toBall > 0 ? 1 : -1) : 0;
+      var pushRight = ball.x < GROUND_HALF_WIDTH;      // 엔진과 같은 규칙
+      var speed = (Math.abs(smashX) + 1) * 10;          // 실제로 낼 x 와 같은 배율
+      var smashY = -1;                       // 아치는 대개 넘어간다(최후 수단)
+      for (var yi = 1; yi >= -1; yi--) {     // 급강하 -> 수평 -> 아치 순으로 시도
+        var probe = {
+          x: ball.x, y: ball.y,
+          xVelocity: pushRight ? speed : -speed,
+          yVelocity: Math.abs(ball.yVelocity) * yi * 2,
+        };
+        var over = false;
+        for (var pf = 0; pf < TUNE.SMASH_PROBE_FRAMES; pf++) {
+          if (stepBallWorld(probe)) break;
+          // 상대 코트에 도달했는가 (내 코트 기준으로 판정)
+          if (playerIsLeft ? probe.x > GROUND_HALF_WIDTH : probe.x < GROUND_HALF_WIDTH) {
+            over = true;
+            break;
+          }
+        }
+        if (over) { smashY = yi; break; }
       }
-      return { x: Math.abs(toBall) > 4 ? (toBall > 0 ? 1 : -1) : 0, y: smashY, hit: 1 };
+      return { x: smashX, y: smashY, hit: 1 };
     }
   }
 

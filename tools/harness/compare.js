@@ -52,6 +52,9 @@ runMatch({
   // serveScript deliberately NOT used: with the browser's Math.random replaced
   // by the same seeded generator, the harness has to DERIVE the same serves.
   serveScript: null,
+  // 브라우저는 이미 만들어진 게임에 난수기를 갈아끼운다. 여기도 같은 시점에
+  // 맞춰야 양쪽 난수 스트림의 시작점이 일치한다.
+  seedAfterConstruction: true,
   maxFrames: browser.length + 10,
   onFrame: (pv) => {
     if (mine.length < browser.length) mine.push(captureRow(pv));

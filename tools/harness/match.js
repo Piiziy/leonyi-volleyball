@@ -71,6 +71,7 @@ export const runMatch = ({
   maxFrames = 200000,
   serveScript = null,
   onFrame = null,
+  seedAfterConstruction = false,
 }) => {
   // 봇이 수를 섞을 때 Math.random을 쓴다. 평가가 재현 가능해야 어떤 변경이
   // 실제로 개선인지 판단할 수 있으므로, 매치마다 같은 시드로 고정한다.
@@ -79,14 +80,18 @@ export const runMatch = ({
   const botRng = makeRng(seed ^ 0x5bf03635);
   Math.random = botRng;
 
+  // ★ 생성 BEFORE 시드. GameView 생성자가 구름 10개를 만들며 rand() 를 40회
+  //   뽑는데, 시드를 나중에 하면 그 40회가 **직전 매치가 남긴 난수기**에서
+  //   나온다. 구름 위치가 매번 달라지고, 구름이 화면 밖으로 나갈 때마다 추가
+  //   난수를 소비하므로 물리용 스트림이 어긋나 **같은 시드인데 결과가 달라진다**
+  //   (실측: 내장 AI 끼리 같은 시드로 9:10 / 8:10 / 8:10).
+  //
+  //   seedAfterConstruction 은 브라우저 트레이스와 프레임 단위로 대조할 때만
+  //   쓴다. 그때는 브라우저 쪽도 이미 만들어진 게임에 난수기를 갈아끼우므로
+  //   양쪽 스트림 시작점을 맞춰야 하기 때문이다(compare.js).
+  if (!seedAfterConstruction) setCustomRng(makeRng(seed));
   const pv = new PikachuVolleyball({ addChild: () => {} }, {});
-  // Seed AFTER construction, deliberately. GameView's ten Clouds burn 40 draws
-  // in the constructor; a browser run can only be reproduced from the point
-  // where ITS rng was swapped in, which is likewise after the game object
-  // already existed. Seeding here puts both streams at position 0 on the same
-  // frame. Nothing before this point can affect a match: computerBoldness is
-  // redrawn by initializeForNewRound at every round start.
-  setCustomRng(makeRng(seed));
+  if (seedAfterConstruction) setCustomRng(makeRng(seed));
   pv.serveRule = serveRule;
   pv.winningScore = winningScore;
 

@@ -46,6 +46,7 @@ const HEADER = (name) => `'use strict';
 //    [2] 게임 상수   룰 자체가 바뀌었을 때
 //    [3] 물리 미러   엔진 복사본. 새 스킬은 여기
 //    [4] 상태 추정   스냅샷에 없는 값(플레이어 y속도 등) 복원
+//    [4c] 물리 감시  예측이 실제와 어긋나면 단순 모드로 (당일 스킬 대비)
 //    [5] 목적함수    "여유" -- 이 봇의 모든 판단 기준
 //    [6] 전략        판단 로직
 //    [7] decide()    엔진이 매 틱 호출하는 진입점
@@ -69,12 +70,18 @@ function decide(s) {
       TICK_FRAMES = s.config.tickFrameGroupSize;
     }
     syncMirrors(s);
-    var action = strategyDecide(s);
+    // 직전 틱의 예측이 맞았는지 채점한다. 계속 틀리면 물리가 바뀐 것으로 보고
+    // watch.degraded 가 켜지고, 물리 미러를 쓰지 않는 단순 모드로 내려간다([4c]).
+    checkPrediction(s);
+    var action = G.watch.degraded ? safeModeDecide(s) : strategyDecide(s);
     // hit은 한 틱만 세우고 바로 내린다. 지상에서 계속 들고 있으면 다이빙이
     // 반복 발동해 락에 걸린다(착지 5프레임 경직 -> 복귀 -> 즉시 재다이빙).
     if (action.hit === 1 && G.prevAction.hit === 1 && s.self.state !== 1) {
       action = { x: action.x, y: action.y, hit: 0 };
     }
+    // 이번 행동으로 다음 틱이 어떻게 될지 적어 둔다(다음 틱에 채점된다).
+    // 단순 모드에서도 계속 채점해야 물리 미러를 고쳤을 때 복귀할 수 있다.
+    recordPrediction(s, s.side === 'LEFT', action);
     G.prevAction = action;
     return action;
   } catch (e) {
@@ -111,6 +118,7 @@ names.forEach((name) => {
     readFileSync(resolve(SRC, 'tune.js'), 'utf8'),
     readFileSync(resolve(SRC, 'core.js'), 'utf8'),
     readFileSync(resolve(SRC, 'common.js'), 'utf8'),
+    readFileSync(resolve(SRC, 'safety.js'), 'utf8'),
     readFileSync(resolve(SRC, `strategy${name}.js`), 'utf8'),
     FOOTER,
   ];

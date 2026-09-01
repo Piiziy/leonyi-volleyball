@@ -4,11 +4,11 @@
 
 | 파일 | 내용 |
 |---|---|
-| **`src/code-here/Leonyi_v4.js`** | **제출용.** 팀명이 정해지면 이 파일 이름만 바꾼다 |
+| **`src/code-here/Leonyi_v5.js`** | **제출용 후보.** v1 대비 검증 중 |
 | `src/code-here/Leonyi_v1.js` | 회귀 비교 기준선 |
 | `LabA_v1.js` `LabC_v1.js` | 전략 비교용 상대 (전탐색이 아닌 다른 설계) |
 
-빌드: `node build.js B --as Leonyi_v4` (전략 B = 전탐색). `LabB_v1.js` 는 빌드
+빌드: `node build.js B --as Leonyi_v5` (전략 B = 전탐색). `LabB_v1.js` 는 빌드
 산출물이라 커밋하지 않는다.
 
 ※ 개발 중 만들었다가 되돌린 버전들이 있어 번호가 한 번 재사용됐다. 지금

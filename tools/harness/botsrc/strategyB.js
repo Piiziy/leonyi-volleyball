@@ -120,18 +120,46 @@ function candidateActions(w, iAmLeft) {
   // 조작이 아예 안 먹는 상태 -- 한 가지만 보면 된다
   if (st === 3 || st === 4) return [{ x: 0, y: 0, hit: 0 }];
 
+  // ★ 가지치기 -- 이 봇에서 가장 값싼 개선이다.
+  //
+  //   측정: 깊이별 비용이 1:10  2:63  3:346  4:1755  5:2590 노드이고, 예산
+  //   6000 에서 깊이 5는 20% 만 도달한다. 그런데 깊이 4 대 5 의 차이가
+  //   승률 16% 대 84% 였다. 즉 **분기를 줄여 한 깊이를 더 보는 것이 평가함수를
+  //   손보는 것보다 훨씬 크다.**
+  //
+  //   버려도 손해가 없는 수만 버린다:
+  //     - 공이 사거리 밖인데 파워히트를 시도하는 수 (아무 일도 안 일어난다)
+  //     - 공이 내 쪽으로 오지도 않는데 점프하는 수
+  //     - 공이 걸어서 닿는 거리인데 다이빙하는 수 (다이빙은 착지 후 5프레임 경직)
+  //   판정은 싸야 한다. 매 노드에서 도는 코드다.
+  var b = w.ball;
+  var dx = Math.abs(b.x - me.x);
+  var dy = Math.abs(b.y - me.y);
+  // 규칙마다 따로 켠다 -- 어느 것이 손해인지 따로 재기 위해서.
+  // 지금 낸 hit 은 T+1~T+3 에 적용된다. 그 창에 공이 사거리에 들어올 수 있는가.
+  var hitPossible =
+    TUNE.PRUNE_HIT !== 1 || (dx < TUNE.PRUNE_HIT_DX && dy < TUNE.PRUNE_HIT_DY);
+  var myCourtMin = iAmLeft ? 0 : GROUND_HALF_WIDTH;
+  var myCourtMax = iAmLeft ? GROUND_HALF_WIDTH : GROUND_WIDTH;
+  var landing = b.expectedLandingPointX;
+  var ballComing = landing > myCourtMin && landing < myCourtMax;
+  var jumpWorth =
+    TUNE.PRUNE_JUMP !== 1 || (ballComing && Math.abs(landing - me.x) < TUNE.PRUNE_JUMP_DX);
+  var diveWorth =
+    TUNE.PRUNE_DIVE !== 1 || (ballComing && Math.abs(landing - me.x) > TUNE.PRUNE_DIVE_DX);
+
   for (var a = 0; a < 3; a++) {
     var mx = ORDER[a];
     if (airborne) {
       // 공중: hit=1이면 y가 스매시 각도를 정한다. hit=0이면 y는 무의미.
       out.push({ x: mx, y: 0, hit: 0 });
-      if (st === 1) {
-        for (var b = 0; b < 3; b++) out.push({ x: mx, y: ORDER[b], hit: 1 });
+      if (st === 1 && hitPossible) {
+        for (var c = 0; c < 3; c++) out.push({ x: mx, y: ORDER[c], hit: 1 });
       }
     } else if (grounded) {
       out.push({ x: mx, y: 0, hit: 0 });
-      out.push({ x: mx, y: -1, hit: 0 });               // 점프
-      if (mx !== 0) out.push({ x: mx, y: 0, hit: 1 });  // 다이빙 (x=0이면 무효)
+      if (jumpWorth) out.push({ x: mx, y: -1, hit: 0 });          // 점프
+      if (mx !== 0 && diveWorth) out.push({ x: mx, y: 0, hit: 1 }); // 다이빙
     } else {
       out.push({ x: mx, y: 0, hit: 0 });
     }
@@ -149,6 +177,10 @@ var DIAG = {
   // 탐색이 무엇 때문에 끊겼는가. 노드 한도면 기계 속도와 무관하지만,
   // 시간 한도면 "평가가 비싼 쪽이 더 얕게 본다"는 뜻이라 공정하지 않다.
   abortByNodes: 0, abortByTime: 0, nodeSum: 0, nodeN: 0, nodeMax: 0,
+  // 깊이별 비용과 분기 계수. 가지치기가 얼마나 이득인지는 이걸 봐야 안다.
+  depthCost: [0, 0, 0, 0, 0, 0, 0, 0, 0],   // 각 깊이를 완성하는 데 쓴 노드 합
+  depthDone: [0, 0, 0, 0, 0, 0, 0, 0, 0],   // 그 깊이를 완성한 횟수
+  candSum: 0, candN: 0, candMax: 0,          // 후보 수(분기 계수)
 };
 
 // 깊이마다 재사용할 작업용 world. 탐색 중에는 할당을 전혀 하지 않는다.
@@ -184,6 +216,10 @@ function search(w, iAmLeft, depth, touches, wasColliding, isRoot) {
   // 뿌리에서는 모든 후보의 점수를 남긴다 -- 근사 최선끼리 섞기 위해서.
   var pool = isRoot ? [] : null;
   var acts = candidateActions(w, iAmLeft);
+  if (TUNE.DIAG) {
+    DIAG.candSum += acts.length; DIAG.candN++;
+    if (acts.length > DIAG.candMax) DIAG.candMax = acts.length;
+  }
   for (var i = 0; i < acts.length; i++) {
     var act = acts[i];
     var nw = scratchAt(depth, w);
@@ -269,8 +305,10 @@ function strategyDecide(s) {
 
   var best = null;
   for (var d = 1; d <= TUNE.MAX_SEARCH_DEPTH; d++) {
+    var nodesBefore = SEARCH.nodes;
     var r = search(base, iAmLeft, d, G.myTouches, colliding, true);
     if (SEARCH.aborted) break;      // 이 깊이는 미완성 -- 직전 결과를 쓴다
+    if (TUNE.DIAG && d < 9) { DIAG.depthCost[d] += SEARCH.nodes - nodesBefore; DIAG.depthDone[d]++; }
     best = r;
     if (TUNE.DIAG) {
       DIAG.depthSum += d; DIAG.depthN++;
@@ -288,6 +326,11 @@ function strategyDecide(s) {
       ' 중단(노드/시간)=' + DIAG.abortByNodes + '/' + DIAG.abortByTime +
       ' 실제노드(평균/최대)=' + (DIAG.nodeN ? (DIAG.nodeSum / DIAG.nodeN).toFixed(0) : '-') +
       '/' + DIAG.nodeMax +
+      ' 분기(평균/최대)=' + (DIAG.candN ? (DIAG.candSum / DIAG.candN).toFixed(1) : '-') + '/' + DIAG.candMax +
+      ' 깊이별비용=' + [1,2,3,4,5].map(function (d) {
+        return d + ':' + (DIAG.depthDone[d] ? (DIAG.depthCost[d] / DIAG.depthDone[d]).toFixed(0) : '-') +
+          '(x' + DIAG.depthDone[d] + ')';
+      }).join(' ') +
       ' (지평선 비율 ' + (DIAG.rollouts ? (100 * DIAG.horizon / DIAG.rollouts).toFixed(1) : '0') + '%)'
     );
   }

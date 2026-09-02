@@ -242,6 +242,15 @@ function search(w, iAmLeft, depth, touches, wasColliding, isRoot) {
       }
     }
     var score = ended !== null ? ended : search(nw, iAmLeft, depth - 1, t, wc).score;
+    // 지금 땅에 있는데 점프를 시작하는 수라면 값을 매긴다. 32프레임 동안
+    // 낮은 공을 못 받는 대가다. 확실한 결말(±1000)에는 매기지 않는다 --
+    // 이길 수 있으면 그냥 이겨야 한다.
+    if (TUNE.JUMP_PENALTY !== 0 && act.y === -1 && ended === null) {
+      var meNow = meOf(w, iAmLeft);
+      if (meNow.state === 0 && meNow.y === PLAYER_TOUCHING_GROUND_Y_COORD) {
+        score -= TUNE.JUMP_PENALTY;
+      }
+    }
     if (pool !== null) pool.push({ score: score, action: act });
     // 엄격한 > 이므로 먼저 온 후보(= 더 중립적인 행동)가 동점에서 이긴다
     if (best === null || score > best.score) {

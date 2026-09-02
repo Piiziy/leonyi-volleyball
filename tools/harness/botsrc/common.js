@@ -44,6 +44,8 @@ var G = {
     jumps: 0,        // 점프(state 1)를 본 횟수
     maxStep: 0,      // 관측된 최대 이동 속도 (px/프레임)
     stress: 0,       // 상대가 실제로 쫓아가야 했던 상황의 수
+    depthSum: 0,     // 상대가 우리 코트로 보낸 공의 "네트로부터의 거리" 합
+    depthN: 0,       // 그 표본 수 (네트를 넘는 순간에만 한 번씩 센다)
   },
 
   // --- 터치 카운트 (룰: 한 진영 5회째 접촉 시 실점, 즉 4회까지만 안전) --------
@@ -196,6 +198,19 @@ function syncMirrors(s) {
   if (newRally || (G.prevBallLeft !== null && ballLeft !== G.prevBallLeft)) {
     G.myTouches = 0;
     G.wasTouching = false;
+  }
+  // ★ 상대가 보내는 공의 깊이를 네트 통과 순간에 **한 번만** 잰다.
+  //   틱마다 세면 비행이 긴 깊은 공이 과대 대표되어 평균이 왜곡된다.
+  if (G.prevBallLeft !== null && ballLeft !== G.prevBallLeft) {
+    var camingToMe = (s.side === 'LEFT') === ballLeft;
+    if (camingToMe) {
+      var land = s.ball.expectedLandingPointX;
+      var mine = s.side === 'LEFT' ? land < GROUND_HALF_WIDTH : land > GROUND_HALF_WIDTH;
+      if (mine) {
+        G.oppSpec.depthSum += Math.abs(GROUND_HALF_WIDTH - land);
+        G.oppSpec.depthN++;
+      }
+    }
   }
   G.prevBallLeft = ballLeft;
   var touchingNow = isCollision(s.ball, s.self.x, s.self.y);
@@ -529,12 +544,28 @@ function opponentSmashes() {
  * 나가지 않는다. 당일에 이 한 줄(TUNE.STAND_FORWARD_BIAS)만 만지면 된다.
  */
 function standTarget(x, iAmLeft) {
-  if (TUNE.STAND_FORWARD_BIAS === 0) return x;
+  var bias = standForwardBias();
+  if (bias === 0) return x;
   var court = ownCourt(iAmLeft);
-  var t = iAmLeft ? x + TUNE.STAND_FORWARD_BIAS : x - TUNE.STAND_FORWARD_BIAS;
+  var t = iAmLeft ? x + bias : x - bias;
   var lo = court[0] + PLAYER_HALF_LENGTH;
   var hi = court[1] - PLAYER_HALF_LENGTH;
   return t < lo ? lo : t > hi ? hi : t;
+}
+
+/**
+ * 실제로 쓸 전진 편향. 상대가 깊은 공만 보내면 줄인다.
+ * 당일에는 TUNE.STAND_ADAPT 를 0 으로 두면 관측을 끄고 고정값만 쓴다.
+ */
+function standForwardBias() {
+  if (TUNE.STAND_ADAPT !== 1) return TUNE.STAND_FORWARD_BIAS;
+  var spec = G.oppSpec;
+  if (spec.depthN < TUNE.STAND_ADAPT_MIN_N) return TUNE.STAND_FORWARD_BIAS;
+  var mean = spec.depthSum / spec.depthN;
+  var span = TUNE.STAND_DEEP_DEPTH - TUNE.STAND_SHALLOW_DEPTH;
+  var t = span > 0 ? (mean - TUNE.STAND_SHALLOW_DEPTH) / span : 0;
+  t = t < 0 ? 0 : t > 1 ? 1 : t;
+  return TUNE.STAND_FORWARD_BIAS * (1 - t);
 }
 
 function bestDefensiveStand(s, iAmLeft) {

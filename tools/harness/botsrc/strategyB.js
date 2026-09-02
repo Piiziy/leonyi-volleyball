@@ -262,8 +262,48 @@ function search(w, iAmLeft, depth, touches, wasColliding, isRoot) {
  *
  * ★ 단, 확실한 결정타는 절대 섞지 않는다. 못 받는 공은 읽혀도 못 받는다.
  */
-function pickFromPool(best) {
+function pickFromPool(best, s, iAmLeft) {
   if (best === null || best.pool === undefined) return best !== null ? best.action : null;
+
+  // ★ 동점을 "제자리로 가는 쪽"으로 깬다.
+  //
+  //   탐색은 "어차피 롤아웃이 나를 그 자리로 데려간다"고 보고 대부분의 상황에서
+  //   모든 후보를 동점으로 평가한다. 그러면 동점이 첫 후보 {0,0,0}(가만히)으로
+  //   깨지고, 봇은 공이 오는데도 38% 의 프레임을 서서 보낸다(실측). 남은
+  //   점프·다이빙도 롤아웃이 우연히 미세한 우위를 준 헛동작이었다.
+  //
+  //   그래서 점수가 같으면 **3프레임 뒤 낙하지점에 더 가까워지는 수**를 고른다.
+  //   평가가 구분하지 못하는 수들 사이의 선택이므로 실력 손해가 없고,
+  //   "제자리에 서 있으라"는 정보를 공짜로 넣는 셈이다.
+  if (TUNE.TIEBREAK_TOWARD_LANDING === 1 && s !== undefined) {
+    var target = s.ball.expectedLandingPointX;
+    var court = ownCourt(iAmLeft);
+    // 낙하지점이 상대 코트면 수비 대기 위치를 목표로 삼는다
+    if (target < court[0] || target > court[1]) {
+      var stand = bestDefensiveStand(s, iAmLeft);
+      target = stand !== null ? stand.x : (court[0] + court[1]) / 2;
+    }
+    // ★ 동점 처리의 후보는 **평범한 이동 수만** 본다(hit=0, 점프 아님).
+    //   페널티로 억제하려 했더니 실패했다 -- 다이빙은 8px/프레임이라 3프레임에
+    //   24px 를 가고, 걷기(18px)보다 6px 이득이라 웬만한 페널티를 이긴다.
+    //   그래서 다이빙이 72.7% -> 85.7% 로 늘었다. 탐색이 구분하지 못하는
+    //   상황이라면 특수 동작(다이빙·점프)을 쓸 이유 자체가 없다. 그건 탐색이
+    //   확실한 이유를 찾았을 때만 나와야 한다.
+    var pool = best.pool;
+    var pick = null;
+    var pickGap = Infinity;
+    for (var i = 0; i < pool.length; i++) {
+      if (pool[i].score < best.score - TUNE.MIX_EPSILON) continue;
+      var act = pool[i].action;
+      if (act.hit !== 0 || act.y === -1) continue;   // 평범한 이동만
+      var future = s.self.x + act.x * 6 * TICK_FRAMES;
+      var gap = Math.abs(target - future);
+      if (gap < pickGap) { pickGap = gap; pick = act; }
+    }
+    // 동점 집합에 평범한 이동이 하나도 없으면(예: 공중) 원래 최선을 쓴다
+    if (pick !== null) return pick;
+  }
+
   // ★ 섞기를 끄면 candidateActions 가 넣어 둔 순서대로 동점이 깨진다. 그 순서는
   //   "중립(0) 먼저"라 의미가 있다 -- 평가가 구분 못 하는 상황에서는 가만히
   //   있는 쪽이 안전하다. 무작위로 깨면 봇이 좌우로 떨게 된다.
@@ -353,6 +393,33 @@ function strategyDecide(s) {
     if (SEARCH.nodes > DIAG.nodeMax) DIAG.nodeMax = SEARCH.nodes;
   }
 
-  var chosen = pickFromPool(best);
+  // ★ 공이 상대 코트에 있고 우리에게 오지 않는 동안에는 탐색이 어떤 수를 둬도
+  //   결과가 같다고 본다(지평선 안에서 결과가 안 갈리고, 그 뒤는 롤아웃 정책이
+  //   어차피 같은 자리로 걸어간다). 그래서 모든 후보가 동점이 되고 봇은
+  //   **91.2% 의 프레임을 가만히 서서** 보냈다. 상대가 스매시를 준비하는 동안
+  //   아무 대비도 안 한 것이고, 남은 다이빙의 3분의 2도 이 구간의 헛다이빙이었다.
+  //
+  //   탐색이 구분하지 못하는 구간이므로 명시적으로 수비 자리를 잡는다.
+  if (TUNE.DEFENSIVE_POSITIONING === 1) {
+    var oppSide = iAmLeft
+      ? s.ball.x > GROUND_HALF_WIDTH
+      : s.ball.x < GROUND_HALF_WIDTH;
+    var landingOnThem = iAmLeft
+      ? s.ball.expectedLandingPointX > GROUND_HALF_WIDTH
+      : s.ball.expectedLandingPointX < GROUND_HALF_WIDTH;
+    if (oppSide && landingOnThem && s.self.state === 0) {
+      var stand = bestDefensiveStand(s, iAmLeft);
+      if (stand !== null) {
+        var ddx = stand.x - s.self.x;
+        return {
+          x: Math.abs(ddx) > TUNE.MOVE_DEADBAND ? (ddx > 0 ? 1 : -1) : 0,
+          y: 0,
+          hit: 0,
+        };
+      }
+    }
+  }
+
+  var chosen = pickFromPool(best, s, iAmLeft);
   return chosen !== null && chosen !== undefined ? chosen : { x: 0, y: 0, hit: 0 };
 }

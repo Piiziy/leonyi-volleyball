@@ -511,6 +511,69 @@ function opponentSmashes() {
 }
 
 /**
+ * 수비 대기 위치 — 상대가 낼 수 있는 최선의 결과를 **최소화**하는 자리(미니맥스).
+ *
+ * ★ 왜 필요한가
+ *   공이 상대 코트에 있으면 탐색 지평선(약 4~5틱) 안에서 우리가 뭘 하든 결과가
+ *   같다. 그 뒤는 롤아웃 정책이 어차피 같은 자리로 걸어가니 차이가 사라진다.
+ *   그래서 모든 후보가 동점이 되고 봇은 **91.2% 의 프레임을 가만히 서서** 보낸다
+ *   (실측). 상대가 스매시를 준비하는 동안 아무 대비도 안 하는 것이다.
+ *
+ *   탐색이 구분하지 못하는 구간이므로 명시적으로 자리를 잡는다. 상대가 지금
+ *   공을 잡아 6가지 각도로 때린다고 보고, 그중 **최악을 가장 잘 막는 x** 를 찾는다.
+ *
+ * @return {{x:number, worst:number}|null} 상대가 넘길 수 있는 수가 없으면 null
+ */
+function bestDefensiveStand(s, iAmLeft) {
+  var court = ownCourt(iAmLeft);
+  var minX = court[0] + PLAYER_HALF_LENGTH;
+  var maxX = court[1] - PLAYER_HALF_LENGTH;
+
+  // 상대가 실제로 공을 잡을 지점까지 굴린다. 지금 위치에서 때린다고 보면
+  // 접촉 높이가 달라 위협을 잘못 잰다.
+  var b = {
+    x: s.ball.x, y: s.ball.y,
+    xVelocity: s.ball.xVelocity, yVelocity: s.ball.yVelocity,
+  };
+  var oppX = s.opp.x;
+  var found = false;
+  for (var f = 1; f <= TUNE.THREAT_SCAN_FRAMES; f++) {
+    if (stepBallWorld(b)) break;
+    if (Math.abs(b.x - oppX) > TUNE.OPP_WALK_SPEED * f + PLAYER_HALF_LENGTH) continue;
+    if (b.y < TUNE.SMASH_MIN_BALL_Y) continue;
+    found = true;
+    break;
+  }
+  if (!found) return null;
+
+  // 그 지점에서 상대가 낼 수 있는 모든 결과를 미리 구해 둔다.
+  var shots = [];
+  for (var ix = 0; ix <= 1; ix++) {
+    for (var iy = -1; iy <= 1; iy++) {
+      var r = shotOutcome(b, ix, iy, !iAmLeft);
+      var toMe = iAmLeft
+        ? r.landing < GROUND_HALF_WIDTH
+        : r.landing > GROUND_HALF_WIDTH;
+      if (!r.crossed || !toMe) continue;        // 그건 상대의 자책이다
+      shots.push(r);
+    }
+  }
+  if (shots.length === 0) return null;
+
+  var best = null;
+  for (var x = minX; x <= maxX; x += TUNE.DEFENSE_STEP) {
+    var worst = -9999;
+    for (var i = 0; i < shots.length; i++) {
+      // 내가 x 에 서 있을 때 그 공의 여유(상대에게 유리할수록 큼)
+      var m = Math.abs(shots[i].landing - x) - opponentReach(shots[i].frames);
+      if (m > worst) worst = m;
+    }
+    if (best === null || worst < best.worst) best = { x: x, worst: worst };
+  }
+  return best;
+}
+
+/**
  * 한쪽이 이 공으로 낼 수 있는 "최선의 위협".
  *
  * ★ 이 봇의 2수 평가의 핵심. 지금 공 위치에서 바로 때린다고 가정하면 안 된다 --

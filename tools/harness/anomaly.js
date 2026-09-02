@@ -58,6 +58,9 @@ for (let m = 0; m < matches; m++) {
     const meIdx = flipped ? 1 : 0;
     let prevState = 0;
     let jumpOpen = false;
+    let diveOpen = false;
+    let diveBallCameOver = false;
+    let diveWalkable = false;
     let jumpTouched = false;
     let jumpBallCameOver = false;
     let jumpWasLeft = false;
@@ -89,9 +92,23 @@ for (let m = 0; m < matches; m++) {
         const landingMine = myCourtLeft ? landing < NET : landing > NET;
 
         // --- 다이빙 -------------------------------------------------------
+        // ★ 점프 때와 같은 함정. 다이빙 시작 프레임의 공 위치만 보면, 곧
+        //   넘어올 공을 미리 맞이하는 정상적인 다이빙까지 이상행동으로 센다.
+        //   네트 앞에 서는 봇일수록 그런 다이빙이 많아 지표가 크게 부풀었다
+        //   (v12 에서 78.9%). 다이빙이 끝날 때까지 한 번이라도 공이 우리 쪽으로
+        //   넘어왔는지를 본다.
         if (prevState !== 3 && me.state === 3) {
-          bump(A.diveOnOppSide, !ballOnMySide);
-          bump(A.diveWhenWalkable, ballOnMySide && Math.abs(landing - me.x) <= HALF);
+          diveOpen = true;
+          diveBallCameOver = ballOnMySide;
+          diveWalkable = ballOnMySide && Math.abs(landing - me.x) <= HALF;
+        }
+        if (diveOpen) {
+          if (ballOnMySide) diveBallCameOver = true;
+          if (me.state === 0) {          // 눕기(4)까지 끝나고 일어섰다
+            bump(A.diveOnOppSide, !diveBallCameOver);
+            bump(A.diveWhenWalkable, diveWalkable);
+            diveOpen = false;
+          }
         }
 
         // --- 점프 ---------------------------------------------------------

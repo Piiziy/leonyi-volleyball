@@ -53,8 +53,8 @@ const r = await runParallel({
   seedBase: 3000,
 });
 
-warnIfBotMisbehaved('A: ' + aFile, r.aBad);
-warnIfBotMisbehaved('B: ' + bFile, r.bBad);
+warnIfBotMisbehaved('A: ' + aFile, r.aBad, { timeBudgetOff: true });
+warnIfBotMisbehaved('B: ' + bFile, r.bBad, { timeBudgetOff: true });
 const decided = r.aWins + r.bWins;
 const p = decided ? r.aWins / decided : 0;
 const ci = decided ? 100 * 1.96 * Math.sqrt((p * (1 - p)) / decided) : 100;

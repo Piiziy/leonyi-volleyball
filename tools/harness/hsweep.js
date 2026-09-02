@@ -57,8 +57,8 @@ for (const overrides of combos) {
     bTune: base(bBudget),
     matches, seedBase: 3000,
   });
-  warnIfBotMisbehaved('후보', r.aBad);
-  warnIfBotMisbehaved('기준', r.bBad);
+  warnIfBotMisbehaved('후보', r.aBad, { timeBudgetOff: true });
+  warnIfBotMisbehaved('기준', r.bBad, { timeBudgetOff: true });
   const decided = r.aWins + r.bWins;
   const p = decided ? r.aWins / decided : 0;
   const ci = decided ? 100 * 1.96 * Math.sqrt((p * (1 - p)) / decided) : 100;

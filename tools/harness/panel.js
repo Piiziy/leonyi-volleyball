@@ -48,8 +48,8 @@ for (const v of values) {
       bTune: opp === 'ai' ? null : { TIME_BUDGET_MS: 100000 },
       matches, seedBase: 5000,
     });
-    warnIfBotMisbehaved(`${bot} (${key}=${v}, vs ${opp})`, r.aBad);
-    warnIfBotMisbehaved(`${opp} (vs ${key}=${v})`, r.bBad);
+    warnIfBotMisbehaved(`${bot} (${key}=${v}, vs ${opp})`, r.aBad, { timeBudgetOff: true });
+    warnIfBotMisbehaved(`${opp} (vs ${key}=${v})`, r.bBad, { timeBudgetOff: true });
     const decided = r.aWins + r.bWins;
     cells.push(decided ? (100 * r.aWins) / decided : 0);
     wins += r.aWins;

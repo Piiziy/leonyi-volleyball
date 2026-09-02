@@ -39,12 +39,18 @@ const mergeBad = (a, b) => ({
  * 봇이 사고를 쳤으면 **크게** 찍는다. 조용히 넘어가면 승률만 보고 "이 상수가
  * 나쁘다"고 잘못 결론 내린다.
  */
-export const warnIfBotMisbehaved = (label, bad) => {
-  if (!bad || (!bad.exc && !bad.invalid && !bad.hard)) return false;
+export const warnIfBotMisbehaved = (label, bad, options) => {
+  // ★ 시간 예산을 해제한 측정에서는 360ms 초과를 세지 않는다. 그건 봇의
+  //   결함이 아니라 "노드 한도만 물리려고 일부러 시계를 끈" 결과이고, 부하가
+  //   높을수록 늘어난다(실제 봇은 TIME_BUDGET_MS 에서 끊긴다). 거짓 경보가
+  //   섞이면 경고 자체를 안 보게 된다 -- anomaly.js 에 적어 둔 원칙과 같다.
+  const countHard = !(options && options.timeBudgetOff);
+  const hard = countHard ? bad && bad.hard : 0;
+  if (!bad || (!bad.exc && !bad.invalid && !hard)) return false;
   console.log(`\n  !! ${label} 가 정상 동작하지 않았습니다 -- 이 측정은 실력을 잰 것이 아닙니다`);
   if (bad.exc) console.log(`     decide() 예외 ${bad.exc}회`);
   if (bad.invalid) console.log(`     형식이 틀린 반환 ${bad.invalid}회 (무입력 처리됨)`);
-  if (bad.hard) console.log(`     360ms 초과 ${bad.hard}회 (브라우저였다면 응답 폐기)`);
+  if (hard) console.log(`     360ms 초과 ${hard}회 (브라우저였다면 응답 폐기)`);
   if (bad.err) console.log('     첫 예외:\n' + bad.err);
   return true;
 };

@@ -38,15 +38,19 @@ const load = (f) =>
 
 /** 각 항목: 이름, 설명, 카운터 */
 const A = {
-  diveOnOppSide:    { n: 0, of: 0, label: '공이 상대 코트인데 다이빙',       why: '5프레임 경직만 손해. 공이 올 수 없다' },
-  diveWhenWalkable: { n: 0, of: 0, label: '걸어서 닿는데 다이빙',            why: '경직 5프레임이 순손해' },
-  jumpNoContact:    { n: 0, of: 0, label: '공에 닿지 않은 점프',             why: '32프레임 동안 궤도가 고정된다' },
-  jumpOnOppSide:    { n: 0, of: 0, label: '비행 내내 공이 상대 코트인 점프', why: '32프레임을 헛되이 묶인다' },
-  idleWhileIncoming:{ n: 0, of: 0, label: '공이 오는데 낙하지점에서 멀리 정지', why: '갈 시간이 있는데 안 간다' },
-  awayFromBall:     { n: 0, of: 0, label: '공이 오는데 반대로 이동',         why: '거리가 벌어진다' },
-  ownGoal:          { n: 0, of: 0, label: '내가 친 공이 내 코트에 낙하',     why: '자책' },
-  touchLimit:       { n: 0, of: 0, label: '터치리밋 자멸',                   why: '5회 접촉 실점' },
-  standingIdle:     { n: 0, of: 0, label: '공이 상대 코트일 때 정지',        why: '수비 준비를 안 한다(참고용)' },
+  diveOnOppSide:    { n: 0, of: 0, nL: 0, ofL: 0, label: '공이 상대 코트인데 다이빙',       why: '5프레임 경직만 손해. 공이 올 수 없다' },
+  diveWhenWalkable: { n: 0, of: 0, nL: 0, ofL: 0, label: '걸어서 닿는데 다이빙',            why: '경직 5프레임이 순손해' },
+  // ★ 점프의 비용을 오해했었다. physics.js 를 다시 읽어 보니 점프 중에도
+  //   x 이동은 그대로 6px/프레임이다(playerVelocityX 는 state < 3 이면 입력을
+  //   따른다). 그러니 헛점프가 잃는 것은 "궤도"가 아니라 **그 32프레임 동안
+  //   다이빙도 재점프도 못 한다**는 것뿐이다. 손해가 작아서 우선순위도 낮다.
+  jumpNoContact:    { n: 0, of: 0, nL: 0, ofL: 0, label: '공에 닿지 않은 점프',             why: '착지까지 다이빙·재점프를 못 한다(손해는 작다)' },
+  jumpOnOppSide:    { n: 0, of: 0, nL: 0, ofL: 0, label: '비행 내내 공이 상대 코트인 점프', why: '착지까지 다이빙·재점프를 못 한다(손해는 작다)' },
+  idleWhileIncoming:{ n: 0, of: 0, nL: 0, ofL: 0, label: '공이 오는데 낙하지점에서 멀리 정지', why: '갈 시간이 있는데 안 간다' },
+  awayFromBall:     { n: 0, of: 0, nL: 0, ofL: 0, label: '공이 오는데 반대로 이동',         why: '거리가 벌어진다' },
+  ownGoal:          { n: 0, of: 0, nL: 0, ofL: 0, label: '내가 친 공이 내 코트에 낙하',     why: '자책' },
+  touchLimit:       { n: 0, of: 0, nL: 0, ofL: 0, label: '터치리밋 자멸',                   why: '5회 접촉 실점' },
+  standingIdle:     { n: 0, of: 0, nL: 0, ofL: 0, label: '공이 상대 코트일 때 정지',        why: '수비 준비를 안 한다(참고용)' },
 };
 
 for (let m = 0; m < matches; m++) {
@@ -56,6 +60,7 @@ for (let m = 0; m < matches; m++) {
     let jumpOpen = false;
     let jumpTouched = false;
     let jumpBallCameOver = false;
+    let jumpWasLeft = false;
     let lastToucher = null;
     let prevCollide = [false, false];
     let touchCount = 0;
@@ -74,16 +79,19 @@ for (let m = 0; m < matches; m++) {
         const me = ps[meIdx];
         const k = pv.keyboardArray[meIdx];
         const myCourtLeft = meIdx === 0;
+        // 좌/우를 따로 세기 위한 헬퍼 (n 은 전체, nL 은 LEFT 일 때만)
+        const bump = (r, hit) => {
+          r.of++; if (myCourtLeft) r.ofL++;
+          if (hit) { r.n++; if (myCourtLeft) r.nL++; }
+        };
         const ballOnMySide = myCourtLeft ? b.x < NET : b.x > NET;
         const landing = b.expectedLandingPointX;
         const landingMine = myCourtLeft ? landing < NET : landing > NET;
 
         // --- 다이빙 -------------------------------------------------------
         if (prevState !== 3 && me.state === 3) {
-          A.diveOnOppSide.of++;
-          A.diveWhenWalkable.of++;
-          if (!ballOnMySide) A.diveOnOppSide.n++;
-          else if (Math.abs(landing - me.x) <= HALF) A.diveWhenWalkable.n++;
+          bump(A.diveOnOppSide, !ballOnMySide);
+          bump(A.diveWhenWalkable, ballOnMySide && Math.abs(landing - me.x) <= HALF);
         }
 
         // --- 점프 ---------------------------------------------------------
@@ -91,8 +99,7 @@ for (let m = 0; m < matches; m++) {
           jumpOpen = true;
           jumpTouched = false;
           jumpBallCameOver = ballOnMySide;   // 시작 시점에 이미 우리 쪽이면 정상
-          A.jumpNoContact.of++;
-          A.jumpOnOppSide.of++;
+          jumpWasLeft = myCourtLeft;
         }
         if (jumpOpen) {
           if (me.isCollisionWithBallHappened) jumpTouched = true;
@@ -101,8 +108,8 @@ for (let m = 0; m < matches; m++) {
           //   넘어왔는지를 본다.
           if (ballOnMySide) jumpBallCameOver = true;
           if (me.state === 0 || me.state === 3 || me.state === 4) {
-            if (!jumpTouched) A.jumpNoContact.n++;
-            if (!jumpBallCameOver) A.jumpOnOppSide.n++;
+            bump(A.jumpNoContact, !jumpTouched);
+            bump(A.jumpOnOppSide, !jumpBallCameOver);
             jumpOpen = false;
           }
         }
@@ -111,19 +118,12 @@ for (let m = 0; m < matches; m++) {
         // --- 이동 ---------------------------------------------------------
         if (ballOnMySide && landingMine && me.state === 0) {
           const gap = Math.abs(landing - me.x);
-          A.idleWhileIncoming.of++;
-          A.awayFromBall.of++;
-          // 히트박스 밖인데 가만히 있다 = 갈 생각이 없다
-          if (gap > HALF && k.xDirection === 0) A.idleWhileIncoming.n++;
-          // 낙하지점 반대로 움직인다 (히트박스 밖일 때만 문제)
-          if (gap > HALF && k.xDirection !== 0 &&
-              Math.sign(landing - me.x) !== Math.sign(k.xDirection)) {
-            A.awayFromBall.n++;
-          }
+          bump(A.idleWhileIncoming, gap > HALF && k.xDirection === 0);
+          bump(A.awayFromBall, gap > HALF && k.xDirection !== 0 &&
+            Math.sign(landing - me.x) !== Math.sign(k.xDirection));
         }
         if (!ballOnMySide && me.state === 0) {
-          A.standingIdle.of++;
-          if (k.xDirection === 0) A.standingIdle.n++;
+          bump(A.standingIdle, k.xDirection === 0);
         }
 
         // --- 접촉/실점 ----------------------------------------------------
@@ -139,27 +139,29 @@ for (let m = 0; m < matches; m++) {
         const total = pv.scores[0] + pv.scores[1];
         if (total === prevTotal) return;
         prevTotal = total;
-        A.ownGoal.of++;
-        A.touchLimit.of++;
         const byTouchLimit = b.y < 250;
-        if (byTouchLimit) { if (lastToucher === meIdx) A.touchLimit.n++; return; }
         const landedOnMe = (b.punchEffectX < NET) === myCourtLeft;
-        if (landedOnMe && lastToucher === meIdx) A.ownGoal.n++;
+        bump(A.touchLimit, byTouchLimit && lastToucher === meIdx);
+        bump(A.ownGoal, !byTouchLimit && landedOnMe && lastToucher === meIdx);
       },
     });
   }
 }
 
 console.log(`\n  ${botFile}  vs  ${oppFile}   —  ${matches * 2} sets (좌우 스왑)\n`);
-console.log('  이상행동                              발생 / 기회      비율');
+console.log('  이상행동                          전체      LEFT      RIGHT');
 console.log('  ' + '-'.repeat(68));
 Object.keys(A).forEach((key) => {
   const r = A[key];
   const pct = r.of ? (100 * r.n) / r.of : 0;
   const mark = pct >= 20 ? '★ ' : '  ';
+  const pl = r.ofL ? (100 * r.nL) / r.ofL : 0;
+  const pr = (r.of - r.ofL) ? (100 * (r.n - r.nL)) / (r.of - r.ofL) : 0;
+  const gap = Math.abs(pl - pr);
   console.log(
-    `  ${mark}${r.label.padEnd(34)} ${String(r.n).padStart(5)} / ${String(r.of).padStart(6)}` +
-      `   ${pct.toFixed(1).padStart(5)}%`
+    `  ${mark}${r.label.padEnd(32)} ${pct.toFixed(1).padStart(5)}%   ` +
+      `L ${pl.toFixed(1).padStart(5)}%  R ${pr.toFixed(1).padStart(5)}%` +
+      (gap >= 15 ? '   ← 진영 격차' : '')
   );
 });
 console.log('\n  ★ = 20% 이상. 왜 손해인지:');

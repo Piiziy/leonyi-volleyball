@@ -4,11 +4,12 @@
 
 | 파일 | 내용 |
 |---|---|
-| **`src/code-here/Leonyi_v7.js`** | **제출용.** v1 대비 120세트 83.3% ±6.7 |
+| **`src/code-here/Leonyi_v10.js`** | **제출용.** v7 대비 120세트 59.2% ±8.8 |
+| `src/code-here/Leonyi_v7.js` | 직전 제출용. v1 대비 120세트 83.3% ±6.7 |
 | `src/code-here/Leonyi_v1.js` | 회귀 비교 기준선 |
 | `LabA_v1.js` `LabC_v1.js` | 전략 비교용 상대 (전탐색이 아닌 다른 설계) |
 
-빌드: `node build.js B --as Leonyi_v7` (전략 B = 전탐색). `LabB_v1.js` 는 빌드
+빌드: `node build.js B --as Leonyi_v10` (전략 B = 전탐색). `LabB_v1.js` 는 빌드
 산출물이라 커밋하지 않는다.
 
 ※ 개발 중 만들었다가 되돌린 버전들이 있어 번호가 한 번 재사용됐다. 지금

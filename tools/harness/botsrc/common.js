@@ -524,6 +524,19 @@ function opponentSmashes() {
  *
  * @return {{x:number, worst:number}|null} 상대가 넘길 수 있는 수가 없으면 null
  */
+/**
+ * 대기 위치를 네트 쪽으로 STAND_FORWARD_BIAS 만큼 당긴다. 코트 밖으로는
+ * 나가지 않는다. 당일에 이 한 줄(TUNE.STAND_FORWARD_BIAS)만 만지면 된다.
+ */
+function standTarget(x, iAmLeft) {
+  if (TUNE.STAND_FORWARD_BIAS === 0) return x;
+  var court = ownCourt(iAmLeft);
+  var t = iAmLeft ? x + TUNE.STAND_FORWARD_BIAS : x - TUNE.STAND_FORWARD_BIAS;
+  var lo = court[0] + PLAYER_HALF_LENGTH;
+  var hi = court[1] - PLAYER_HALF_LENGTH;
+  return t < lo ? lo : t > hi ? hi : t;
+}
+
 function bestDefensiveStand(s, iAmLeft) {
   var court = ownCourt(iAmLeft);
   var minX = court[0] + PLAYER_HALF_LENGTH;

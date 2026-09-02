@@ -281,7 +281,7 @@ function pickFromPool(best, s, iAmLeft) {
     // 낙하지점이 상대 코트면 수비 대기 위치를 목표로 삼는다
     if (target < court[0] || target > court[1]) {
       var stand = bestDefensiveStand(s, iAmLeft);
-      target = stand !== null ? stand.x : (court[0] + court[1]) / 2;
+      target = standTarget(stand !== null ? stand.x : (court[0] + court[1]) / 2, iAmLeft);
     }
     // ★ 동점 처리의 후보는 **평범한 이동 수만** 본다(hit=0, 점프 아님).
     //   페널티로 억제하려 했더니 실패했다 -- 다이빙은 8px/프레임이라 3프레임에
@@ -410,7 +410,7 @@ function strategyDecide(s) {
     if (oppSide && landingOnThem && s.self.state === 0) {
       var stand = bestDefensiveStand(s, iAmLeft);
       if (stand !== null) {
-        var ddx = stand.x - s.self.x;
+        var ddx = standTarget(stand.x, iAmLeft) - s.self.x;
         return {
           x: Math.abs(ddx) > TUNE.MOVE_DEADBAND ? (ddx > 0 ? 1 : -1) : 0,
           y: 0,

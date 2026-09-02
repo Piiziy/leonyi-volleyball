@@ -27,6 +27,28 @@ const REPO = resolve(HERE, '../..');
  *   측정은 "차이 없음"으로 조용히 끝난다. 실제로 그렇게 30분을 날렸다.
  *   Object.assign 은 없는 키도 만들어 버리므로 런타임 오류도 안 난다.
  */
+/** 일꾼들이 본 봇의 사고를 합친다 */
+const mergeBad = (a, b) => ({
+  exc: a.exc + (b ? b.exc : 0),
+  invalid: a.invalid + (b ? b.invalid : 0),
+  hard: a.hard + (b ? b.hard : 0),
+  err: a.err !== null ? a.err : b ? b.err : null,
+});
+
+/**
+ * 봇이 사고를 쳤으면 **크게** 찍는다. 조용히 넘어가면 승률만 보고 "이 상수가
+ * 나쁘다"고 잘못 결론 내린다.
+ */
+export const warnIfBotMisbehaved = (label, bad) => {
+  if (!bad || (!bad.exc && !bad.invalid && !bad.hard)) return false;
+  console.log(`\n  !! ${label} 가 정상 동작하지 않았습니다 -- 이 측정은 실력을 잰 것이 아닙니다`);
+  if (bad.exc) console.log(`     decide() 예외 ${bad.exc}회`);
+  if (bad.invalid) console.log(`     형식이 틀린 반환 ${bad.invalid}회 (무입력 처리됨)`);
+  if (bad.hard) console.log(`     360ms 초과 ${bad.hard}회 (브라우저였다면 응답 폐기)`);
+  if (bad.err) console.log('     첫 예외:\n' + bad.err);
+  return true;
+};
+
 const assertTuneKeysExist = (file, tune) => {
   if (file === 'ai' || !tune) return;
   const src = readFileSync(resolve(REPO, 'src/code-here', file), 'utf8');
@@ -75,8 +97,12 @@ export const runParallel = (spec, workers) => {
         aPts: acc.aPts + p.aPts, bPts: acc.bPts + p.bPts,
         left: [acc.left[0] + p.left[0], acc.left[1] + p.left[1]],
         right: [acc.right[0] + p.right[0], acc.right[1] + p.right[1]],
+        aBad: mergeBad(acc.aBad, p.aBad),
+        bBad: mergeBad(acc.bBad, p.bBad),
       }),
-      { aWins: 0, bWins: 0, draws: 0, aPts: 0, bPts: 0, left: [0, 0], right: [0, 0] }
+      { aWins: 0, bWins: 0, draws: 0, aPts: 0, bPts: 0, left: [0, 0], right: [0, 0],
+        aBad: { exc: 0, invalid: 0, hard: 0, err: null },
+        bBad: { exc: 0, invalid: 0, hard: 0, err: null } }
     )
   );
 };

@@ -16,7 +16,7 @@
  *   특정 값에 유리하게 몰릴 이유가 없고, 합계가 실력을 반영한다.
  */
 'use strict';
-import { runParallel } from './parallel.js';
+import { runParallel, warnIfBotMisbehaved } from './parallel.js';
 
 const args = process.argv.slice(2).reduce((acc, t, i, all) => {
   if (!t.startsWith('--')) return acc;
@@ -48,6 +48,8 @@ for (const v of values) {
       bTune: opp === 'ai' ? null : { TIME_BUDGET_MS: 100000 },
       matches, seedBase: 5000,
     });
+    warnIfBotMisbehaved(`${bot} (${key}=${v}, vs ${opp})`, r.aBad);
+    warnIfBotMisbehaved(`${opp} (vs ${key}=${v})`, r.bBad);
     const decided = r.aWins + r.bWins;
     cells.push(decided ? (100 * r.aWins) / decided : 0);
     wins += r.aWins;

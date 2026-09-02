@@ -20,7 +20,7 @@
  *   알려준다. 30세트의 신뢰구간은 ±18%p 라 웬만한 비교가 전부 결론 불가다.
  */
 'use strict';
-import { runParallel } from './parallel.js';
+import { runParallel, warnIfBotMisbehaved } from './parallel.js';
 
 const parseArgs = (argv) =>
   argv.reduce((acc, t, i, all) => {
@@ -53,6 +53,8 @@ const r = await runParallel({
   seedBase: 3000,
 });
 
+warnIfBotMisbehaved('A: ' + aFile, r.aBad);
+warnIfBotMisbehaved('B: ' + bFile, r.bBad);
 const decided = r.aWins + r.bWins;
 const p = decided ? r.aWins / decided : 0;
 const ci = decided ? 100 * 1.96 * Math.sqrt((p * (1 - p)) / decided) : 100;

@@ -13,7 +13,7 @@
  * 노이즈를 개선으로 읽는 실수를 다섯 번 했다.
  */
 'use strict';
-import { runParallel } from './parallel.js';
+import { runParallel, warnIfBotMisbehaved } from './parallel.js';
 
 const parseArgs = (argv) =>
   argv.reduce((acc, t, i, all) => {
@@ -57,6 +57,8 @@ for (const overrides of combos) {
     bTune: base(bBudget),
     matches, seedBase: 3000,
   });
+  warnIfBotMisbehaved('후보', r.aBad);
+  warnIfBotMisbehaved('기준', r.bBad);
   const decided = r.aWins + r.bWins;
   const p = decided ? r.aWins / decided : 0;
   const ci = decided ? 100 * 1.96 * Math.sqrt((p * (1 - p)) / decided) : 100;

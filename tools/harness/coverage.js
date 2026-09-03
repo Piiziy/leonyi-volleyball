@@ -179,7 +179,7 @@ const bots = [baseBot, ...others];
 bots.forEach(load);           // 소스 캐시를 채운다
 
 const stat = {};
-bots.forEach((b) => { stat[b] = { touched: 0, returned: 0 }; });
+bots.forEach((b) => { stat[b] = { touched: 0, returned: 0, L: [0, 0], R: [0, 0] }; });
 const holes = [];
 
 scenarios.forEach((sc) => {
@@ -188,6 +188,11 @@ scenarios.forEach((sc) => {
     r[b] = runScenario(load(b), sc, sc.iAmLeft, 12345);
     if (r[b].touched) stat[b].touched++;
     if (r[b].returned) stat[b].returned++;
+    // ★ 좌우를 나눠 센다. 시나리오는 거울로 뒤집은 같은 상황이므로, 여기서
+    //   차이가 나면 그건 **구조적 비대칭**이다(경기 흐름이 아니라).
+    const side = sc.iAmLeft ? stat[b].L : stat[b].R;
+    side[1]++;
+    if (r[b].returned) side[0]++;
   });
   // 구멍: 기준봇은 못 돌려보냈는데 다른 봇 중 하나는 돌려보낸 시나리오
   if (!r[baseBot].returned) {
@@ -197,12 +202,13 @@ scenarios.forEach((sc) => {
 });
 
 console.log(`\n  수비 커버리지 — 유효 시나리오 ${scenarios.length}개 (좌우 각각)\n`);
-console.log('  봇                     닿음      돌려보냄');
+console.log('  봇                     닿음      돌려보냄     거울 시나리오 좌우별');
 console.log('  ' + '-'.repeat(48));
 bots.forEach((b) => {
   const t = (100 * stat[b].touched / scenarios.length).toFixed(1);
   const rr = (100 * stat[b].returned / scenarios.length).toFixed(1);
-  console.log(`  ${b.padEnd(20)} ${t.padStart(6)}%   ${rr.padStart(6)}%`);
+  const sp = (v) => (v[1] ? ((100 * v[0]) / v[1]).toFixed(1) : '-').padStart(6);
+  console.log(`  ${b.padEnd(20)} ${t.padStart(6)}%   ${rr.padStart(6)}%    L ${sp(stat[b].L)}%  R ${sp(stat[b].R)}%`);
 });
 
 console.log(`\n  ★ ${baseBot} 만 못 돌려보낸 시나리오: ${holes.length}개`);

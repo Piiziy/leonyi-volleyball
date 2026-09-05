@@ -28,3 +28,4 @@ tools/harness/ab-*.txt
 tools/harness/budget-*.txt
 tools/harness/anomaly-*.txt
 tools/harness/sanity-*.txt
+tools/harness/serve-*.txt

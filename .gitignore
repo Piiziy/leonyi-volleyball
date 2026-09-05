@@ -22,3 +22,9 @@ tools/harness/browser-trace.json
 src/code-here/Lab*_v1.js
 !src/code-here/LabA_v1.js
 !src/code-here/LabC_v1.js
+# 하네스 측정 출력물 (도구가 매번 새로 쓴다)
+tools/harness/*-results.txt
+tools/harness/ab-*.txt
+tools/harness/budget-*.txt
+tools/harness/anomaly-*.txt
+tools/harness/sanity-*.txt

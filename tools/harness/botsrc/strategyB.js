@@ -22,9 +22,24 @@ function meOf(w, iAmLeft) { return iAmLeft ? w.p1 : w.p2; }
  * 탐색은 이 계산을 수만 번 반복하기 때문에 켜두면 30배 느려진다.
  */
 function advance(w, iAmLeft, mx, my, mh) {
-  var og = guessOpponentInput(w, iAmLeft);
-  if (iAmLeft) return stepFrame(w, mx, my, mh, og.x, og.y, og.hit, true);
-  return stepFrame(w, og.x, og.y, og.hit, mx, my, mh, true);
+  var ox, oy, oh;
+  if (TUNE.SIM_TICK_CADENCE === 1) {
+    // ★ 엔진은 TICK_FRAMES 마다 한 번만 입력을 받는다. 여기서 매 프레임 새로
+    //   계산하면 시뮬 속 상대가 실제보다 3배 민첩해지고, 그 오차는 비행시간에
+    //   비례해 커진다 -- 느린 공일수록 상대가 더 많이 따라잡는 것으로 보인다.
+    //   우리 쪽 수는 search() 가 이미 TICK_FRAMES 동안 유지하므로 대칭이 맞다.
+    if (w.oppPhase === 0) {
+      var fresh = guessOpponentInput(w, iAmLeft);
+      w.oppX = fresh.x; w.oppY = fresh.y; w.oppHit = fresh.hit;
+    }
+    w.oppPhase = w.oppPhase + 1 >= TICK_FRAMES ? 0 : w.oppPhase + 1;
+    ox = w.oppX; oy = w.oppY; oh = w.oppHit;
+  } else {
+    var og = guessOpponentInput(w, iAmLeft);
+    ox = og.x; oy = og.y; oh = og.hit;
+  }
+  if (iAmLeft) return stepFrame(w, mx, my, mh, ox, oy, oh, true);
+  return stepFrame(w, ox, oy, oh, mx, my, mh, true);
 }
 
 function worldAtDecisionPoint(s, iAmLeft) {
@@ -48,13 +63,20 @@ function rollout(src, iAmLeft, touches) {
   var w = copyWorldInto(ROLLOUT_SCRATCH, src);
   var myTouches = touches;
   var wasColliding = false;
+  // 양쪽의 결정 프레임을 맞춘다 -- 엔진은 두 봇을 같은 그룹 경계에서 부른다.
+  if (TUNE.SIM_TICK_CADENCE === 1) w.oppPhase = 0;
+  var myX = 0, myY = 0, myHit = 0;
   for (var f = 0; f < TUNE.ROLLOUT_FRAMES; f++) {
     // ★ 우리도 상대와 똑같은 정책으로 계속 플레이한다고 본다.
     //   예전에는 여기서 "걷기만" 했다 -- 즉 탐색 지평선 너머의 우리 공격력이
     //   평가에서 통째로 빠져 있었다. 롤아웃의 95%가 지평선 전에 끝나므로
     //   이 정책이 사실상 평가함수 그 자체다.
-    var myMove = policyFor(w, iAmLeft, true);
-    var r = advance(w, iAmLeft, myMove.x, myMove.y, myMove.hit);
+    // 우리 쪽도 같은 리듬으로 둔다 -- 한쪽만 느리게 하면 그게 새 편향이다.
+    if (TUNE.SIM_TICK_CADENCE !== 1 || f % TICK_FRAMES === 0) {
+      var myMove = policyFor(w, iAmLeft, true);
+      myX = myMove.x; myY = myMove.y; myHit = myMove.hit;
+    }
+    var r = advance(w, iAmLeft, myX, myY, myHit);
 
     var me = meOf(w, iAmLeft);
     var colliding = isCollision(w.ball, me.x, me.y);
@@ -116,6 +138,8 @@ function candidateActions(w, iAmLeft) {
   var airborne = st === 1 || st === 2;
   var out = [];
   var ORDER = [0, -1, 1];
+  // 스매시 각도만 순서를 따로 둔다 -- 이동 축의 "중립 먼저"와 근거가 다르다.
+  var HIT_ORDER = TUNE.SMASH_ANGLE_UP_FIRST === 1 ? [-1, 0, 1] : [0, -1, 1];
 
   // 조작이 아예 안 먹는 상태 -- 한 가지만 보면 된다
   if (st === 3 || st === 4) return [{ x: 0, y: 0, hit: 0 }];
@@ -154,7 +178,8 @@ function candidateActions(w, iAmLeft) {
       // 공중: hit=1이면 y가 스매시 각도를 정한다. hit=0이면 y는 무의미.
       out.push({ x: mx, y: 0, hit: 0 });
       if (st === 1 && hitPossible) {
-        for (var c = 0; c < 3; c++) out.push({ x: mx, y: ORDER[c], hit: 1 });
+        // ★ 각도의 동점은 이 순서로 깨진다([1] SMASH_ANGLE_UP_FIRST 참고).
+        for (var c = 0; c < 3; c++) out.push({ x: mx, y: HIT_ORDER[c], hit: 1 });
       }
     } else if (grounded) {
       out.push({ x: mx, y: 0, hit: 0 });

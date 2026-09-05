@@ -115,8 +115,13 @@ const OPTIONS = [];
 let contacts = 0, actualWins = 0, bestWins = 0, sameAsBest = 0;
 const byAngle = { '-1': 0, '0': 0, '1': 0, 'none': 0 };
 /** 최선의 수는 어떤 종류였나 (실제와 달랐던 경우만) */
-const betterKind = { '스매시 아래': 0, '스매시 수평': 0, '스매시 위': 0, '안 치고 이동': 0 };
-const KIND = (o) => o.hit === 1 ? (o.y === -1 ? '스매시 아래' : o.y === 0 ? '스매시 수평' : '스매시 위') : '안 치고 이동';
+// ★ 부호 주의 -- 예전에는 이 라벨이 정확히 반대로 찍혔다.
+//   physics.js 는 y 가 아래로 증가하고, 파워히트는
+//     ball.yVelocity = |v| * userInput.yDirection * 2   (physics.js:739)
+//   이므로 y=-1 이 **위로 올려치기**, y=+1 이 **내려꽂기**다.
+//   반대로 읽으면 "정답은 내려꽂기" 라는 결론이 나오는데 실제로는 그 반대다.
+const betterKind = { '스매시 위로': 0, '스매시 수평': 0, '스매시 내려꽂기': 0, '안 치고 이동': 0 };
+const KIND = (o) => o.hit === 1 ? (o.y === -1 ? '스매시 위로' : o.y === 0 ? '스매시 수평' : '스매시 내려꽂기') : '안 치고 이동';
 
 for (let m = 0; m < matches; m++) {
   let prev = null;
@@ -170,7 +175,7 @@ if (tot > 0) {
     if (betterKind[k]) console.log(`    ${k.padEnd(14)} ${pct(betterKind[k], tot)}`);
   });
 }
-console.log(`\n  실제로 고른 각도:  아래(-1) ${pct(byAngle['-1'], contacts)}   ` +
-  `수평(0) ${pct(byAngle['0'], contacts)}   위(1) ${pct(byAngle['1'], contacts)}   ` +
+console.log(`\n  실제로 고른 각도:  위로(-1) ${pct(byAngle['-1'], contacts)}   ` +
+  `수평(0) ${pct(byAngle['0'], contacts)}   내려꽂기(1) ${pct(byAngle['1'], contacts)}   ` +
   `안 침 ${pct(byAngle['none'], contacts)}`);
 console.log('');

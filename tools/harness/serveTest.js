@@ -40,11 +40,22 @@ const src = readFileSync(resolve(REPO, 'src/code-here', botFile), 'utf8');
 const wrap = (policy) => {
   const inner = compileBot(src, botFile);
   let touched = false;
-  let prevVx = 0;
+  let prevServing = false;
   return (s) => {
     const serving = s.ball.xVelocity === 0 && s.ball.yVelocity >= 0;
+    // ★ 새 서브 구간이 열리는 전이로 리셋한다.
+    //   예전에는 `s.rallyFrameCount < 3` 이었는데 두 겹으로 틀렸다:
+    //     (1) 그 필드는 s.meta.rallyFrameCount 다 -> s.rallyFrameCount 는
+    //         undefined 이고 `undefined < 3` 은 false,
+    //     (2) 경로를 고쳐도 안 된다 -- 서브 구간이 열리는 시점의 실측값이
+    //         3, 12, 14, 14, ... 이라 `< 3` 이 한 번도 참이 되지 않는다.
+    //   그래서 touched 가 매치 첫 접촉에서 true 가 된 뒤 영영 리셋되지 않았고,
+    //   정책은 **매치당 첫 서브 하나에만** 걸렸다(실측: 서브 29개 중 2개).
+    //   즉 다섯 정책의 "전부 구분 불가"는 같은 봇을 다섯 번 잰 결과였다.
+    //   서브 공은 항상 화면 꼭대기에서 시작하므로 y 로 랠리 중 오탐을 막는다.
+    if (serving && !prevServing && s.ball.y < 40) touched = false;
+    prevServing = serving;
     if (!serving) touched = true;
-    if (s.rallyFrameCount < 3) touched = false;   // 새 랠리
     if (serving && !touched && policy !== null) {
       const iAmLeft = s.side === 'LEFT';
       const a = policy(s, iAmLeft);

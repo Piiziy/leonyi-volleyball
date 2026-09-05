@@ -150,6 +150,7 @@ function copyWorldInto(d, w) {
   a.isPowerHit = b.isPowerHit; a.expectedLandingPointX = b.expectedLandingPointX;
   copyPlayerInto(d.p1, w.p1);
   copyPlayerInto(d.p2, w.p2);
+  d.oppX = w.oppX; d.oppY = w.oppY; d.oppHit = w.oppHit; d.oppPhase = w.oppPhase;
   return d;
 }
 
@@ -172,6 +173,10 @@ function cloneWorld(w) {
     },
     p1: cp(w.p1),
     p2: cp(w.p2),
+    // 시뮬 속 상대의 입력 래치([1] SIM_TICK_CADENCE). 엔진과 같은 리듬으로
+    // TICK_FRAMES 마다 한 번만 결정하게 하려면 그 사이 값을 들고 있어야 한다.
+    oppX: w.oppX || 0, oppY: w.oppY || 0, oppHit: w.oppHit || 0,
+    oppPhase: w.oppPhase || 0,
   };
 }
 

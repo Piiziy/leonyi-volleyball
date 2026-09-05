@@ -4,6 +4,7 @@
 
 | 파일 | 내용 |
 |---|---|
+| `src/code-here/Leonyi_v17.js` | **후보 2.** v16 + SIM_DIVE·SIM_TICK_CADENCE. 근거가 아직 **예산 600 스크리닝**뿐이다 |
 | `src/code-here/Leonyi_v16.js` | **후보.** v14 대비 100세트 **100/100**. 아직 검증 미완 — 아래 참고 |
 | **`src/code-here/Leonyi_v14.js`** | **제출용(유지).** v12 대비 100세트 92.0% ±5.3 |
 | `src/code-here/Leonyi_v12.js` | 직전 제출용. v10 대비 89.2% ±5.6 |

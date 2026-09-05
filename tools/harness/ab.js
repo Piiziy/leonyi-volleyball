@@ -38,6 +38,10 @@ const seedBase = Number(args.seed || 7000);
 const out = args.out || 'ab-results.txt';
 const NO_TIME_BUDGET = { TIME_BUDGET_MS: 100000 };
 const combos = JSON.parse(args.combos || '[["대조",{}]]');
+// ★ 스크리닝: 양쪽 예산을 함께 낮추면 3배 빨라진다. 후보를 훑을 때만 쓰고,
+//   이긴 것은 반드시 정식 예산에서 다시 확인할 것 -- 예산에 따라 결과가
+//   달라지는 변경이 실제로 있었다(README).
+const screen = args.screen ? JSON.parse(args.screen) : null;
 
 const say = (line) => { console.log(line); appendFileSync(out, line + '\n'); };
 writeFileSync(out, '');
@@ -52,8 +56,8 @@ for (const [name, tune] of combos) {
   const tc = Date.now();
   const r = await runParallel({
     aFile: bot, bFile: ref,
-    aTune: { ...NO_TIME_BUDGET, ...tune },
-    bTune: { ...NO_TIME_BUDGET },
+    aTune: { ...NO_TIME_BUDGET, ...screen, ...tune },
+    bTune: { ...NO_TIME_BUDGET, ...screen },
     matches, seedBase,
   });
   warnIfBotMisbehaved(`${bot} (${name})`, r.aBad, { timeBudgetOff: true });

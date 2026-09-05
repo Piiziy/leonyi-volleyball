@@ -29,9 +29,19 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, '../..');
 const NET = 216;
 
-const botFile = process.argv[2] || 'Leonyi_v14.js';
-const matches = Number(process.argv[3] || 10);
-const src = readFileSync(resolve(REPO, 'src/code-here', botFile), 'utf8');
+const args = process.argv.slice(2).reduce((a, t, i, all) => {
+  if (!t.startsWith('--')) return a;
+  const n = all[i + 1];
+  return { ...a, [t.slice(2)]: n && !n.startsWith('--') ? n : true };
+}, {});
+const botFile = args.bot || 'Leonyi_v16.js';
+const matches = Number(args.matches || 10);
+// ★ 시간 예산은 항상 끈다(결정론). --tune 으로 NODE_BUDGET 을 낮추면 스크리닝이
+//   빨라지는데, 서브 구간은 정책이 입력을 직접 내므로 탐색 깊이의 영향이 작다.
+//   단 랠리 뒷부분은 탐색이 하므로 **큰 효과만 신뢰할 것.**
+const extra = args.tune ? ',' + String(args.tune).replace(/^\{|\}$/g, '') : '';
+const src = readFileSync(resolve(REPO, 'src/code-here', botFile), 'utf8') +
+  '\n;Object.assign(TUNE,{TIME_BUDGET_MS:100000' + extra + '});';
 
 /**
  * 서브 구간 동안만 정해진 입력을 내고, 첫 접촉 뒤에는 봇에게 돌려준다.

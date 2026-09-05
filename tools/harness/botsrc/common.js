@@ -405,6 +405,52 @@ function landsOnOpponent(x, iAmLeft) {
   return iAmLeft ? x > GROUND_HALF_WIDTH : x < GROUND_HALF_WIDTH;
 }
 
+/**
+ * 서브 — 탐색에 맡기지 않고 손으로 정한다. ([1] SERVE_LOB)
+ *
+ * ★ 왜 탐색을 안 쓰나
+ *   탐색에 맡긴 서브는 **높이 136 에서 수평으로 나가는 공**이다(vx=20, vy=0).
+ *   받는 쪽은 20프레임 동안 자리를 잡고 기다렸다가 점프 스매시로 내려꽂는다.
+ *   즉 우리 서브가 상대에게 공격하기 좋은 공을 배달한다.
+ *
+ *   serveTest.js 로 다섯 정책을 재니(v14 자기대전 10세트, 서브측 랠리 승률):
+ *     기본(탐색이 결정)            3.6% ±4.0   세트 승률  50.0%
+ *     안 때리고 띄우기(네트쪽)      0.0%        세트 승률  40.0%
+ *     안 때리고 띄우기(제자리)      0.0%        세트 승률   0.0%
+ *     ★ 점프해서 위로 올려치기     54.1% ±11.4  세트 승률 100.0%
+ *     늦게 때리기                 43.9% ±12.0  세트 승률 100.0%
+ *
+ *   서브측 랠리 승률이 3.6% -> 54.1% 다. 신뢰구간이 근처도 가지 않는다.
+ *
+ * ★ 직전까지 이 레포는 "서브로는 못 받는 공을 만들 수 없다"고 결론 내려 두었다.
+ *   그 측정은 serveTest.js 가 정책을 **매치당 첫 서브 하나에만** 적용하던
+ *   시절의 것이라(서브 29개 중 2개) 다섯 정책이 전부 같은 봇이었다. 무효다.
+ *
+ * @return {{x,y,hit}|null} 서브 상황이 아니면 null (탐색에 맡긴다)
+ */
+function serveAction(s, iAmLeft) {
+  if (TUNE.SERVE_LOB !== 1 || !G.inServe) return null;
+  // 내 서브인가 -- 서브 공은 서브권을 가진 쪽 코트에 떨어진다.
+  var court = ownCourt(iAmLeft);
+  if (s.ball.x < court[0] || s.ball.x > court[1]) return null;
+
+  var dx = s.ball.x - s.self.x;
+  // 1) 공 밑으로 걸어간다
+  if (dx > TUNE.SERVE_ALIGN_X) return { x: 1, y: 0, hit: 0 };
+  if (dx < -TUNE.SERVE_ALIGN_X) return { x: -1, y: 0, hit: 0 };
+  // 2) 공이 충분히 내려오면 점프한다
+  if (s.self.state === 0 && s.ball.y > TUNE.SERVE_JUMP_BALL_Y) {
+    return { x: 0, y: -1, hit: 0 };
+  }
+  // 3) 공중에서 사거리에 들어오면 **위로** 파워히트한다.
+  //    y=-1 이면 yVelocity = |낙하속도| x -1 x 2 로 위로 뜬다(physics.js:739).
+  //    x 는 0 이 아니어야 xVelocity 가 20 이 된다 -- 10 이면 네트를 못 넘는다.
+  if (s.self.state === 1 && Math.abs(s.ball.y - s.self.y) < TUNE.SERVE_HIT_REACH) {
+    return { x: 1, y: -1, hit: 1 };
+  }
+  return { x: 0, y: 0, hit: 0 };
+}
+
 
 // ============================================================================
 // [5] 공통 목적함수 — "여유(margin)"

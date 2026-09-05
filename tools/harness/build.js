@@ -92,7 +92,13 @@ function decide(s) {
     // 직전 틱의 예측이 맞았는지 채점한다. 계속 틀리면 물리가 바뀐 것으로 보고
     // watch.degraded 가 켜지고, 물리 미러를 쓰지 않는 단순 모드로 내려간다([4c]).
     checkPrediction(s);
-    var action = G.watch.degraded ? safeModeDecide(s) : strategyDecide(s);
+    // 서브는 탐색보다 손으로 정한 정책이 훨씬 낫다([1] SERVE_LOB, 측정 근거는
+    // serveAction 헤더). 물리 감시가 발동한 단순 모드에서도 서브는 유효하다 --
+    // 물리 미러를 쓰지 않는 고정 입력이기 때문이다.
+    var action = serveAction(s, s.side === 'LEFT');
+    if (action === null) {
+      action = G.watch.degraded ? safeModeDecide(s) : strategyDecide(s);
+    }
     // hit은 한 틱만 세우고 바로 내린다. 지상에서 계속 들고 있으면 다이빙이
     // 반복 발동해 락에 걸린다(착지 5프레임 경직 -> 복귀 -> 즉시 재다이빙).
     if (action.hit === 1 && G.prevAction.hit === 1 && s.self.state !== 1) {

@@ -4,6 +4,7 @@
 
 | 파일 | 내용 |
 |---|---|
+| `src/code-here/Leonyi_v19.js` | **후보 4.** v18 + **로브 서브**. 서브측 랠리 승률 3.6% -> 54.1% |
 | `src/code-here/Leonyi_v18.js` | **후보 3.** v14 + **서브 구간에서만** 낙하지점 갱신. 실전 관찰 기반 |
 | `src/code-here/Leonyi_v17.js` | **후보 2.** v16 + SIM_DIVE·SIM_TICK_CADENCE. 근거가 아직 **예산 600 스크리닝**뿐이다 |
 | `src/code-here/Leonyi_v16.js` | **후보.** v14 대비 100세트 **100/100**. 아직 검증 미완 — 아래 참고 |

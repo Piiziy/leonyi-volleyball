@@ -328,7 +328,13 @@ function stepFrame(w, i1x, i1y, i1h, i2x, i2y, i2h, skipLandingPrediction) {
   //   아니지만, 정책의 조준점으로 쓰기에는 충분하다.)
   var velocityChanged =
     hitHappened || ground || w.ball.xVelocity !== vx0 || w.ball.yVelocity !== vy0 + 1;
-  if (!skipLandingPrediction || (TUNE.SIM_LANDING_REFRESH === 1 && velocityChanged)) {
+  // ★ 서브 구간에서만 켤 수도 있다([1] SIM_LANDING_REFRESH_ON_SERVE).
+  //   서브는 선택지가 극히 좁아(자책 안 나는 수가 사실상 둘) 낙하지점 갱신의
+  //   이득이 순수하게 나타나는 반면, 랠리 중에는 v14 의 움직임을 그대로 둔다.
+  var refresh =
+    TUNE.SIM_LANDING_REFRESH === 1 ||
+    (TUNE.SIM_LANDING_REFRESH_ON_SERVE === 1 && G.inServe);
+  if (!skipLandingPrediction || (refresh && velocityChanged)) {
     w.ball.expectedLandingPointX = predictLanding(w.ball);
   }
   return { ground: ground, landedX: landedX, uncertain: uncertain };

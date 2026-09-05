@@ -22,6 +22,10 @@ var G = {
   oppMirror: null,                    // 상대 캐릭터의 추정 미러
   rallyId: -1,                        // 랠리가 바뀌면 미러를 다시 세운다
   ticks: 0,
+  // ★ 지금이 서브 구간인가 ([1] SIM_LANDING_REFRESH_ON_SERVE 참고).
+  //   서브 공은 x속도 0 으로 수직 낙하하다가, 누군가 건드리는 순간 x속도가 붙는다.
+  //   랠리 중에 x속도가 정확히 0 이 되는 일은 사실상 없다.
+  inServe: false,
   errorReported: false,  // decide 예외를 한 번만 알리기 위한 플래그
 
   // --- 물리 발산 감시 ([4c]) ------------------------------------------------
@@ -223,6 +227,9 @@ function syncMirrors(s) {
   G.wasTouching = touchingNow;
 
   observeOpponent(s);
+
+  // 서브 구간 판정. 매 틱 한 번만 계산해서 물리 미러가 참조한다.
+  G.inServe = s.ball.xVelocity === 0 && s.ball.yVelocity >= 0;
 
   G.prevSnapshot = s;
   G.ticks++;

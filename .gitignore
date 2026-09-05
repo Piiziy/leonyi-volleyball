@@ -29,3 +29,5 @@ tools/harness/budget-*.txt
 tools/harness/anomaly-*.txt
 tools/harness/sanity-*.txt
 tools/harness/serve-*.txt
+tools/harness/behavior-*.txt
+tools/harness/run-*.txt
